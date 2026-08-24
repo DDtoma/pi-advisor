@@ -1,0 +1,30 @@
+{
+  "name": "pi-advisor",
+  "version": "0.1.0",
+  "description": "Watchdog advisor extensions for pi — isolated LLM reviewers that audit the primary agent in the background",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "pi": {
+    "extensions": ["./extensions/index.ts"]
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types test/run.ts",
+    "lint:tokens": "node scripts/check-token-budget.mjs",
+    "docs:check": "node scripts/check-docs-freshness.mjs"
+  },
+  "dependencies": {
+    "typebox": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": ["pi", "extension", "advisor", "watchdog", "llm", "review"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/llight/pi-advisor.git"
+  }
+}

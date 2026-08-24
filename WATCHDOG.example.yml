@@ -1,0 +1,45 @@
+# pi-advisor 示例配置 —— 复制到项目根(或 ~/.pi/agent/)并按需修改
+# schema 详见 docs/architecture.md §5
+
+version: "1"
+project: example-project
+
+defaults:
+  maxTokens: 80000
+  failurePolicy: backoff
+
+advisors:
+  - name: Security
+    slug: security
+    model: minimax-cn/MiniMax-M3:high
+    focus: ["**/*.ts", "**/*.sql", "**/auth/**"]
+    ignore: ["**/test/**", "**/*.md", "**/fixtures/**"]
+    tools: [read, grep]
+    trigger:
+      frequency: per-update
+      priority: high
+    prompt: |
+      You are a security reviewer watching another agent's work.
+      Flag ONLY material, exploitable issues: SQL injection, command injection,
+      hardcoded secrets, missing authz checks, unsafe deserialization.
+      Cite file:line. If nothing material, stay silent.
+      severity=blocker for actively exploitable; concern for latent risk.
+    maxTokens: 80000
+    failurePolicy: halt
+    enabled: true
+
+  - name: Correctness
+    slug: correctness
+    model: minimax-cn/MiniMax-M3
+    focus: ["**/*.ts"]
+    tools: [read, grep, find]
+    trigger:
+      frequency: per-N-turns
+      every: 3
+      priority: normal
+    prompt: |
+      Watch for: tests deleted or weakened to pass, error handling removed,
+      type assertions hiding real mismatches, loops that can't terminate,
+      the agent re-trying the same failing fix (>2 attempts = flag it).
+      Narrate what you see; don't prescribe fixes.
+    enabled: true

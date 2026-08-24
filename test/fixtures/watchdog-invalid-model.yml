@@ -1,0 +1,5 @@
+version: "1"
+advisors:
+  - slug: bad
+    model: no-provider-slash
+    prompt: x

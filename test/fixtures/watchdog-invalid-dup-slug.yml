@@ -1,0 +1,8 @@
+version: "1"
+advisors:
+  - slug: dup
+    model: p/m
+    prompt: first
+  - slug: dup
+    model: p/m
+    prompt: second

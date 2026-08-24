@@ -1,0 +1,9 @@
+version: "1"
+project: my-project
+advisors:
+  - slug: global-sec
+    model: project/model-c
+    prompt: project override of global-sec
+  - slug: project-only
+    model: project/model-d
+    prompt: project advisor

@@ -1,0 +1,8 @@
+version: "1"
+advisors:
+  - slug: global-sec
+    model: global/model-a
+    prompt: global security prompt
+  - slug: global-only
+    model: global/model-b
+    prompt: stays unless project overrides

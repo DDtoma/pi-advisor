@@ -102,6 +102,8 @@ export interface SessionEntryLike {
 		role?: string;
 		content?: unknown;
 		stopReason?: string;
+		/** pi toolResult messages carry the tool name here. */
+		toolName?: string;
 	};
 	/** Free-form extras are fingerprinted but not interpreted by the core. */
 	[key: string]: unknown;

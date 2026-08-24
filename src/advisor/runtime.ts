@@ -262,6 +262,41 @@ export class AdvisorRuntime {
 		}
 	}
 
+	/**
+	 * session_compact: drop advisor histories (their context is now stale)
+	 * and invalidate in-flight drains, but KEEP cursors — the next slice
+	 * detects the branch rewrite via fingerprints and re-renders the
+	 * compacted branch in full.
+	 */
+	resetContexts(): void {
+		for (const inst of this.#instances.values()) {
+			inst.epoch++;
+			inst.queue.length = 0;
+			this.#resetInstanceContext(inst);
+		}
+	}
+
+	/** /advisor now: bypass focus/frequency gates and drain immediately. */
+	forceTrigger(slug: string): string {
+		const inst = this.#instances.get(slug);
+		if (!inst) return `unknown advisor: ${slug}`;
+		if (inst.halted) return `${slug} is halted — /advisor reset ${slug} lifts the latch`;
+		if (!inst.config.enabled) return `${slug} is disabled — /advisor on ${slug} first`;
+		const slice = this.#opts.source.slice(inst.cursor);
+		inst.cursor = slice.next;
+		if (slice.resetDetected) this.#resetInstanceContext(inst);
+		if (slice.entries.length > 0) {
+			let text = renderDelta(slice.entries, inst.scrubber);
+			if (slice.resetDetected && text.trim()) {
+				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
+			}
+			if (text.trim()) inst.queue.push({ text, turnIndex: -1, revision: inst.revision });
+		}
+		if (inst.queue.length === 0) return "nothing new to review";
+		this.#kickDrain(inst);
+		return `triggered ${slug} (${inst.queue.length} delta(s) queued)`;
+	}
+
 	get(slug: string): AdvisorStatus | undefined {
 		return this.status().find((s) => s.slug === slug);
 	}

@@ -108,6 +108,16 @@ export class AdvisorRoster {
 		return this.#runtime?.previewNext() ?? [];
 	}
 
+	/** session_compact hook. */
+	resetContexts(): void {
+		this.#runtime?.resetContexts();
+	}
+
+	/** /advisor now. */
+	forceTrigger(slug: string): string {
+		return this.#runtime?.forceTrigger(slug) ?? `advisor system not loaded`;
+	}
+
 	async settle(): Promise<void> {
 		await this.#runtime?.settle();
 	}

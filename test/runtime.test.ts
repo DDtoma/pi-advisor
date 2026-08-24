@@ -86,11 +86,9 @@ function fakeInjector(): { injector: Injector; log: Injection[] } {
 		injector: {
 			steer: (text) => {
 				log.push({ channel: "steer", text });
-				return Promise.resolve();
 			},
 			followUp: (text) => {
 				log.push({ channel: "followUp", text });
-				return Promise.resolve();
 			},
 			enqueueNit: (text) => {
 				log.push({ channel: "nit", text });

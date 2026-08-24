@@ -266,6 +266,34 @@ export class AdvisorRuntime {
 		return this.status().find((s) => s.slug === slug);
 	}
 
+	/**
+	 * /advisor next: which advisors would fire if a turn ended right now.
+	 * Pure preview — cursors and counters are NOT advanced.
+	 */
+	previewNext(): { slug: string; name: string; wouldTrigger: boolean; reason: string }[] {
+		return [...this.#instances.values()].map((inst) => {
+			const base = { slug: inst.config.slug, name: inst.config.name };
+			if (!inst.config.enabled) return { ...base, wouldTrigger: false, reason: "disabled" };
+			if (inst.halted) return { ...base, wouldTrigger: false, reason: "halted" };
+			const slice = this.#opts.source.slice(inst.cursor);
+			if (slice.entries.length === 0) return { ...base, wouldTrigger: false, reason: "no new entries" };
+			if (!matchesFocus(inst.config, slice.entries)) {
+				return { ...base, wouldTrigger: false, reason: "focus miss" };
+			}
+			if (inst.config.trigger.frequency === "per-N-turns") {
+				const every = inst.config.trigger.every ?? 1;
+				if (inst.turnsSinceTrigger + 1 < every) {
+					return {
+						...base,
+						wouldTrigger: false,
+						reason: `frequency: ${inst.turnsSinceTrigger + 1}/${every}`,
+					};
+				}
+			}
+			return { ...base, wouldTrigger: true, reason: "would trigger" };
+		});
+	}
+
 	#passesFrequency(inst: AdvisorInstance): boolean {
 		const trigger = inst.config.trigger;
 		if (trigger.frequency === "per-update") return true;
@@ -375,6 +403,7 @@ export class AdvisorRuntime {
 			systemPrompt: inst.config.prompt,
 			messages: [...inst.history, { role: "user", content: batchText }],
 			tools: [ADVISE_TOOL_DEF, ...toolDefsFor(inst.config.tools)],
+			modelSpec: inst.config.model,
 		};
 	}
 
@@ -399,6 +428,7 @@ export class AdvisorRuntime {
 					{ role: "user", content: "Write the summary now, plain text." },
 				],
 				tools: [],
+				modelSpec: inst.config.model,
 			});
 			const summaryText = summary.content
 				.filter((b) => b.type === "text")

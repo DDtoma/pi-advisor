@@ -135,7 +135,7 @@ export interface ToolCallBlock {
 	arguments: Record<string, unknown>;
 }
 
-export type ContentBlock = TextContent | ToolCallBlock | { type: string; [key: string]: unknown };
+export type ContentBlock = TextContent | ToolCallBlock;
 
 export interface UserMessage {
 	role: "user";
@@ -189,6 +189,11 @@ export interface CompleteRequest {
 	systemPrompt: string;
 	messages: Message[];
 	tools: ToolDef[];
+	/**
+		"provider/model-id[:thinking]" from the advisor config. The pi-side
+		ModelCaller resolves it through the model registry; test fakes ignore it.
+	*/
+	modelSpec?: string;
 	signal?: AbortSignal;
 }
 
@@ -201,9 +206,9 @@ export interface CompleteResult {
 /** Advice injection channels back into the primary session. */
 export interface Injector {
 	/** Interrupt channel for blockers. */
-	steer(text: string): Promise<void>;
+	steer(text: string): void;
 	/** Queued channel for concerns. */
-	followUp(text: string): Promise<void>;
+	followUp(text: string): void;
 	/** Silent batched channel for nits, drained by before_agent_start. */
 	enqueueNit(text: string): void;
 }

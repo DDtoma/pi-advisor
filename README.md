@@ -34,7 +34,7 @@
 | `WATCHDOG.yml` 声明式 roster | 同格式移植 | ✅ 等价 |
 | `session-advisors.ts` 文档驻留指令表 | `docs/` + `check-docs-freshness.mjs` | ✅ 等价(形式不同) |
 
-## 安装与使用(实现完成后)
+## 安装与使用
 
 ```bash
 # 全局安装
@@ -48,8 +48,13 @@ pi -e /path/to/pi-advisor/extensions/index.ts
 /advisor status          # 查看 roster 状态、token 消耗、失败计数
 /advisor next            # 检查下一次 turn 会触发哪些 advisor
 /advisor now <slug>      # 立即手动触发一次(忽略 focus 过滤)
-/advisor off             # 全部关闭
+/advisor off [slug]      # 关闭全部(或指定)advisor
+/advisor on [slug]       # 打开全部(或指定)advisor
+/advisor reset [slug]    # 清除熔断锁与历史,游标跳到 session 末尾
+/advisor reload          # 重新加载 WATCHDOG.yml(全局 + 项目)
 ```
+
+`PI_ADVISOR_DEBUG=1` 时生命周期事件追加到 `/tmp/pi-advisor-debug.log`。
 
 项目根放一个 `WATCHDOG.yml`:
 
@@ -72,12 +77,45 @@ advisors:
     enabled: true
 ```
 
+## 项目布局
+
+```
+extensions/index.ts      # 组合点:事件接线 + /advisor 命令面
+src/advisor/types.ts     # 核心契约(不依赖 pi)
+src/advisor/secrets.ts   # secret 脱敏
+src/advisor/cursor.ts    # 增量游标(sha1 指纹)
+src/advisor/formatter.ts # SessionEntry → markdown
+src/advisor/emission-guard.ts  # 废话过滤 + 去重 + 限流
+src/advisor/config.ts    # WATCHDOG.yml + YAML 子集解析器
+src/advisor/tools.ts     # 只读工具白名单
+src/advisor/engine.ts    # 工具循环
+src/advisor/router.ts    # severity → 通道路由
+src/advisor/runtime.ts   # drain / coalesce / maintainContext / 失败分类
+src/advisor/roster.ts    # 配置发现 + runtime 生命周期
+src/pi/session-source.ts # ReadonlySessionManager → DeltaSource
+src/pi/model-caller.ts   # modelRegistry.complete 封装
+src/pi/inject.ts         # steer/followUp/nitQueue → Injector
+test/                    # node:test 单测(无 pi 依赖)
+test/fixtures/           # WATCHDOG.yml 样例
+scripts/check-token-budget.mjs    # prompt ≤ 5000 字符 CI 闸
+scripts/check-docs-freshness.mjs  # 文档新鲜度 CI 闸
+```
+
+## 开发
+
+```bash
+npm test            # 全部单测(node --experimental-strip-types)
+npx tsc --noEmit    # 类型检查
+npm run lint:tokens # prompt 预算
+npm run docs:check  # 文档新鲜度
+```
+
 ## 文档地图
 
 | 文档 | 内容 |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | 系统架构:三要素(隔离/链路/缓存)的完整设计 |
-| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.2) |
+| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.3) |
 | [docs/design-decisions.md](docs/design-decisions.md) | 全部 ADR,含被否决的替代方案 |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | 模块分解、依赖顺序、每模块验收标准 |
 | [docs/testing.md](docs/testing.md) | 测试策略与 fixture 说明 |

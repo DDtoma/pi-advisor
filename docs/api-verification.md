@@ -1,11 +1,11 @@
-# API 验证清单 —— pi 0.84.2 本机实测
+# API 验证清单 —— pi 0.84.3 本机实测
 
 本文档记录 pi-advisor 依赖的**每一个** pi / pi-ai API,以及它在本机安装中的确切定义位置。写实现时以本文档为准;升级 pi 后逐行重新核对。
 
 验证环境:
 
 ```
-pi 版本:        0.84.2
+pi 版本:        0.84.3
 安装路径:       /home/llight/.local/lib/node_modules/@earendil-works/pi-coding-agent
 下文缩写:       PI_DIR = 上述路径
 pi-ai 路径:     PI_DIR/node_modules/@earendil-works/pi-ai

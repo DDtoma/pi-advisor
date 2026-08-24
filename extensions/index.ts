@@ -219,12 +219,17 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				}
 				case "off":
 				case "on": {
+					const enable = sub === "on";
 					if (!slug) {
-						ctx.ui.notify(`usage: /advisor ${sub} <slug>`, "warning");
+						// No slug → apply to every advisor.
+						const all = roster.status().map((s) => s.slug);
+						for (const s of all) roster.setEnabled(s, enable);
+						ctx.ui.notify(`all advisors ${enable ? "enabled" : "disabled"} (${all.length})`, "info");
+						updateStatusWidget(ctx);
 						return;
 					}
-					const ok = roster.setEnabled(slug, sub === "on");
-					ctx.ui.notify(ok ? `${slug} ${sub === "on" ? "enabled" : "disabled"}` : `unknown advisor: ${slug}`, ok ? "info" : "warning");
+					const ok = roster.setEnabled(slug, enable);
+					ctx.ui.notify(ok ? `${slug} ${enable ? "enabled" : "disabled"}` : `unknown advisor: ${slug}`, ok ? "info" : "warning");
 					updateStatusWidget(ctx);
 					return;
 				}

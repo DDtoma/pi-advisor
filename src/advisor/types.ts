@@ -140,7 +140,7 @@ export type ContentBlock = TextContent | ToolCallBlock | { type: string; [key: s
 export interface UserMessage {
 	role: "user";
 	content: string | TextContent[];
-	timestamp: number;
+	timestamp?: number; // optional inside advisor history; model-caller stamps it at the pi boundary
 }
 
 export interface AdvisorAssistantMessage {
@@ -148,7 +148,7 @@ export interface AdvisorAssistantMessage {
 	content: ContentBlock[];
 	stopReason?: string;
 	usage?: { input?: number; output?: number };
-	timestamp: number;
+	timestamp?: number; // optional inside advisor history; model-caller stamps it at the pi boundary
 }
 
 export interface ToolResultMessage {
@@ -157,7 +157,7 @@ export interface ToolResultMessage {
 	toolName: string;
 	content: string;
 	isError?: boolean;
-	timestamp: number;
+	timestamp?: number; // optional inside advisor history; model-caller stamps it at the pi boundary
 }
 
 export type Message = UserMessage | AdvisorAssistantMessage | ToolResultMessage;

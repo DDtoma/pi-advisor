@@ -15,9 +15,6 @@
     "lint:tokens": "node scripts/check-token-budget.mjs",
     "docs:check": "node scripts/check-docs-freshness.mjs"
   },
-  "dependencies": {
-    "typebox": "^1.0.0"
-  },
   "devDependencies": {
     "typescript": "^5.6.0",
     "@types/node": "^22.0.0"

@@ -18,7 +18,7 @@
 ## 与 oh-my-pi 的对应关系
 
 | oh-my-pi(`src/advisor/`) | pi-advisor | 状态 |
-|---|---|---|
+| --- | --- | --- |
 | 独立 `Agent` 实例 + `agent.prompt()` | `ctx.modelRegistry.complete(model, context)` + 自维护历史 | ✅ 等价 |
 | 独立 `ToolSession`(id 加 `-advisor` 后缀) | 自实现只读工具循环(read/grep/find/ls/bash:只读命令) | ✅ 等价(审批模型不同,见 ADR-004) |
 | `#extractNewMessages` + `#lastCount` 游标 | `ReadonlySessionManager.getBranch()` + 计数器 + 指纹 | ✅ 等价 |
@@ -113,7 +113,7 @@ npm run docs:check  # 文档新鲜度
 ## 文档地图
 
 | 文档 | 内容 |
-|---|---|
+| --- | --- |
 | [docs/architecture.md](docs/architecture.md) | 系统架构:三要素(隔离/链路/缓存)的完整设计 |
 | [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.3) |
 | [docs/design-decisions.md](docs/design-decisions.md) | 全部 ADR,含被否决的替代方案 |

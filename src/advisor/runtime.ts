@@ -93,21 +93,40 @@ interface AdvisorInstance {
 
 /** Heuristic classifier over provider/model errors (architecture §3.3). */
 export function classifyFailure(err: unknown): FailureClass {
-	const e = err as { status?: number; code?: string; name?: string; message?: string };
+	const e = err as {
+		status?: number;
+		code?: string;
+		name?: string;
+		message?: string;
+	};
 	const status = typeof e?.status === "number" ? e.status : undefined;
 	const msg = String(e?.message ?? err ?? "");
 	const name = String(e?.name ?? "");
 
-	if (status === 401 || status === 403 || /invalid api key|model not found|does not exist|permission/i.test(msg)) {
+	if (
+		status === 401 ||
+		status === 403 ||
+		/invalid api key|model not found|does not exist|permission/i.test(msg)
+	) {
 		return "provider_permanent";
 	}
-	if (/context.{0,30}(overflow|length|too long|exceed)|maximum context|prompt is too long/i.test(msg)) {
+	if (
+		/context.{0,30}(overflow|length|too long|exceed)|maximum context|prompt is too long/i.test(
+			msg,
+		)
+	) {
 		return "advisor_context";
 	}
-	if (/content.?filter|classifier|safety|refused to (generate|complete)/i.test(msg)) {
+	if (
+		/content.?filter|classifier|safety|refused to (generate|complete)/i.test(msg)
+	) {
 		return "classifier_refusal";
 	}
-	if (name === "AbortError" || name === "TimeoutError" || /timed? ?out|deadline exceeded/i.test(msg)) {
+	if (
+		name === "AbortError" ||
+		name === "TimeoutError" ||
+		/timed? ?out|deadline exceeded/i.test(msg)
+	) {
 		return "timeout";
 	}
 	// 429 / 5xx / network — and the safe default: anything unrecognized is
@@ -149,7 +168,10 @@ function normalizeHint(raw: string, cwd?: string): string | undefined {
  * text tokens. Absolute paths (the norm for real read/edit/bash calls) are
  * relativized against cwd so they can match workspace-relative focus globs.
  */
-export function extractPathHints(entries: SessionEntryLike[], cwd?: string): string[] {
+export function extractPathHints(
+	entries: SessionEntryLike[],
+	cwd?: string,
+): string[] {
 	const hints = new Set<string>();
 	const addRaw = (raw: string | undefined) => {
 		if (!raw) return;
@@ -172,7 +194,11 @@ export function extractPathHints(entries: SessionEntryLike[], cwd?: string): str
 		if (!Array.isArray(content)) continue;
 		for (const block of content) {
 			if (!block || typeof block !== "object") continue;
-			const b = block as { type?: string; text?: string; arguments?: Record<string, unknown> };
+			const b = block as {
+				type?: string;
+				text?: string;
+				arguments?: Record<string, unknown>;
+			};
 			if (b.type === "toolCall" && b.arguments) {
 				for (const key of ["path", "file", "pattern"]) {
 					visitArg(b.arguments[key]);
@@ -189,7 +215,11 @@ export function extractPathHints(entries: SessionEntryLike[], cwd?: string): str
 	return [...hints];
 }
 
-export function matchesFocus(config: AdvisorConfig, entries: SessionEntryLike[], cwd?: string): boolean {
+export function matchesFocus(
+	config: AdvisorConfig,
+	entries: SessionEntryLike[],
+	cwd?: string,
+): boolean {
 	if (!config.focus || config.focus.length === 0) return true;
 	const hints = extractPathHints(entries, cwd);
 	return hints.some(
@@ -211,9 +241,11 @@ export class AdvisorRuntime {
 
 	constructor(configs: AdvisorConfig[], opts: AdvisorRuntimeOptions) {
 		this.#opts = opts;
-		this.#maxConsecutiveFailures = opts.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
+		this.#maxConsecutiveFailures =
+			opts.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
 		this.#sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-		for (const config of configs) this.#instances.set(config.slug, newInstance(config));
+		for (const config of configs)
+			this.#instances.set(config.slug, newInstance(config));
 	}
 
 	/**
@@ -249,7 +281,10 @@ export class AdvisorRuntime {
 				continue;
 			}
 			if (!this.#passesFrequency(inst)) {
-				this.#emit(inst, `skipped: frequency ${inst.turnsSinceTrigger}/${inst.config.trigger.frequency}`);
+				this.#emit(
+					inst,
+					`skipped: frequency ${inst.turnsSinceTrigger}/${inst.config.trigger.frequency}`,
+				);
 				continue;
 			}
 			let text: string;
@@ -262,7 +297,12 @@ export class AdvisorRuntime {
 			if (slice.resetDetected) {
 				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
 			}
-			inst.queue.push({ text, turnIndex, revision: inst.revision, queuedAt: Date.now() });
+			inst.queue.push({
+				text,
+				turnIndex,
+				revision: inst.revision,
+				queuedAt: Date.now(),
+			});
 			this.#emit(inst, `queued delta (turn ${turnIndex}, ${text.length} chars)`);
 			this.#kickDrain(inst);
 		}
@@ -340,8 +380,10 @@ export class AdvisorRuntime {
 	forceTrigger(slug: string): string {
 		const inst = this.#instances.get(slug);
 		if (!inst) return `unknown advisor: ${slug}`;
-		if (inst.halted) return `${slug} is halted — /advisor reset ${slug} lifts the latch`;
-		if (!inst.config.enabled) return `${slug} is disabled — /advisor on ${slug} first`;
+		if (inst.halted)
+			return `${slug} is halted — /advisor reset ${slug} lifts the latch`;
+		if (!inst.config.enabled)
+			return `${slug} is disabled — /advisor on ${slug} first`;
 		const slice = this.#opts.source.slice(inst.cursor);
 		inst.cursor = slice.next;
 		if (slice.resetDetected) this.#resetInstanceContext(inst);
@@ -351,7 +393,12 @@ export class AdvisorRuntime {
 				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
 			}
 			if (text.trim())
-				inst.queue.push({ text, turnIndex: -1, revision: inst.revision, queuedAt: Date.now() });
+				inst.queue.push({
+					text,
+					turnIndex: -1,
+					revision: inst.revision,
+					queuedAt: Date.now(),
+				});
 		}
 		if (inst.queue.length === 0) return "nothing new to review";
 		this.#kickDrain(inst);
@@ -366,13 +413,20 @@ export class AdvisorRuntime {
 	 * /advisor next: which advisors would fire if a turn ended right now.
 	 * Pure preview — cursors and counters are NOT advanced.
 	 */
-	previewNext(): { slug: string; name: string; wouldTrigger: boolean; reason: string }[] {
+	previewNext(): {
+		slug: string;
+		name: string;
+		wouldTrigger: boolean;
+		reason: string;
+	}[] {
 		return [...this.#instances.values()].map((inst) => {
 			const base = { slug: inst.config.slug, name: inst.config.name };
-			if (!inst.config.enabled) return { ...base, wouldTrigger: false, reason: "disabled" };
+			if (!inst.config.enabled)
+				return { ...base, wouldTrigger: false, reason: "disabled" };
 			if (inst.halted) return { ...base, wouldTrigger: false, reason: "halted" };
 			const slice = this.#opts.source.slice(inst.cursor);
-			if (slice.entries.length === 0) return { ...base, wouldTrigger: false, reason: "no new entries" };
+			if (slice.entries.length === 0)
+				return { ...base, wouldTrigger: false, reason: "no new entries" };
 			if (!matchesFocus(inst.config, slice.entries, this.#opts.cwd)) {
 				return { ...base, wouldTrigger: false, reason: "focus miss" };
 			}
@@ -523,7 +577,10 @@ export class AdvisorRuntime {
 						// Injection failure must not abort remaining notes or the loop.
 					}
 				} else {
-					this.#emit(inst, `dropped by emission guard [${note.severity}] ${note.note.slice(0, 80)}`);
+					this.#emit(
+						inst,
+						`dropped by emission guard [${note.severity}] ${note.note.slice(0, 80)}`,
+					);
 				}
 			}
 		}
@@ -544,7 +601,10 @@ export class AdvisorRuntime {
 	 * via one complete() call; tier 3: if still over, wipe history and bump
 	 * revision so the next batch carries the full-render prefix.
 	 */
-	async #maintainContext(inst: AdvisorInstance, incomingChars: number): Promise<void> {
+	async #maintainContext(
+		inst: AdvisorInstance,
+		incomingChars: number,
+	): Promise<void> {
 		const budget = charBudgetOf(inst.config);
 		if (estimateChars(inst.history) + incomingChars <= budget) return;
 
@@ -569,7 +629,9 @@ export class AdvisorRuntime {
 			inst.usage.calls++;
 			inst.usage.input += summary.usage?.input ?? 0;
 			inst.usage.output += summary.usage?.output ?? 0;
-			inst.history = [{ role: "user", content: `[summary of earlier review]\n${summaryText}` }];
+			inst.history = [
+				{ role: "user", content: `[summary of earlier review]\n${summaryText}` },
+			];
 		}
 
 		if (estimateChars(inst.history) + incomingChars > budget) {
@@ -626,7 +688,10 @@ export class AdvisorRuntime {
 		}
 	}
 
-	#transient(inst: AdvisorInstance, batch: PendingDelta[]): "retry-later" | "halt" {
+	#transient(
+		inst: AdvisorInstance,
+		batch: PendingDelta[],
+	): "retry-later" | "halt" {
 		inst.consecutiveFailures++;
 		if (inst.consecutiveFailures >= this.#maxConsecutiveFailures) {
 			inst.halted = true;
@@ -634,7 +699,10 @@ export class AdvisorRuntime {
 			return "halt";
 		}
 		inst.queue.unshift(...batch);
-		const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (inst.consecutiveFailures - 1), BACKOFF_CAP_MS);
+		const backoff = Math.min(
+			BACKOFF_BASE_MS * 2 ** (inst.consecutiveFailures - 1),
+			BACKOFF_CAP_MS,
+		);
 		const epoch = inst.epoch;
 		// Track the retry timer in drainPromises so settle() waits out the
 		// backoff before declaring the runtime idle.
@@ -685,7 +753,8 @@ export function estimateChars(history: Message[]): number {
 		}
 		for (const block of content) {
 			if (block.type === "text") total += (block as { text: string }).text.length;
-			else if (block.type === "toolCall") total += JSON.stringify(block.arguments).length;
+			else if (block.type === "toolCall")
+				total += JSON.stringify(block.arguments).length;
 		}
 	}
 	return total;

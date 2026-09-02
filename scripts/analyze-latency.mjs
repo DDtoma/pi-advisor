@@ -36,12 +36,22 @@ for (const line of lines) {
 	const t = ts(line);
 	if (Number.isNaN(t)) continue;
 
-	let m = /event (\S+): reviewing with \S+ \((\d+) chars, queue wait (\d+)ms\)/.exec(line);
+	let m =
+		/event (\S+): reviewing with \S+ \((\d+) chars, queue wait (\d+)ms\)/.exec(
+			line,
+		);
 	if (m) {
-		windows.set(m[1], { reviewStartTs: t, queueWaitMs: Number(m[3]), lastReviewMs: undefined });
+		windows.set(m[1], {
+			reviewStartTs: t,
+			queueWaitMs: Number(m[3]),
+			lastReviewMs: undefined,
+		});
 		continue;
 	}
-	m = /event (\S+): reviewed: \d+ note\(s\), tokens ↑\d+ ↓\d+, review (\d+)ms/.exec(line);
+	m =
+		/event (\S+): reviewed: \d+ note\(s\), tokens ↑\d+ ↓\d+, review (\d+)ms/.exec(
+			line,
+		);
 	if (m) {
 		const w = windows.get(m[1]);
 		if (w) w.lastReviewMs = Number(m[2]);
@@ -80,15 +90,24 @@ const pct = (xs, p) => {
 	const s = [...xs].sort((a, b) => a - b);
 	return s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))];
 };
-const fmt = (ms) => (ms === undefined || Number.isNaN(ms) ? "?" : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
+const fmt = (ms) =>
+	ms === undefined || Number.isNaN(ms)
+		? "?"
+		: ms >= 1000
+			? `${(ms / 1000).toFixed(1)}s`
+			: `${ms}ms`;
 
 if (completed.length === 0) {
 	console.log(`no completed advisory deliveries found in ${logfile}`);
-	console.log("(need PI_ADVISOR_DEBUG=1 sessions with at least one injected note)");
+	console.log(
+		"(need PI_ADVISOR_DEBUG=1 sessions with at least one injected note)",
+	);
 	process.exit(0);
 }
 
-console.log(`stage latencies over ${completed.length} delivered note(s) from ${logfile}\n`);
+console.log(
+	`stage latencies over ${completed.length} delivered note(s) from ${logfile}\n`,
+);
 for (const stage of ["queueWaitMs", "reviewMs", "piDeliveryMs", "totalMs"]) {
 	const xs = completed.map((c) => c[stage]).filter((x) => x !== undefined);
 	console.log(
@@ -105,5 +124,7 @@ for (const c of rows) {
 }
 
 if (pending.size > 0) {
-	console.log(`\n${pending.size} note(s) injected but never seen in session (process ended before delivery, or dropped)`);
+	console.log(
+		`\n${pending.size} note(s) injected but never seen in session (process ended before delivery, or dropped)`,
+	);
 }

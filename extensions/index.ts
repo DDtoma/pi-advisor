@@ -97,9 +97,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 							debugLog(`complete ok stopReason=${res.stopReason}`);
 							return res;
 						} catch (err) {
-							debugLog(
-								`complete FAILED: ${err instanceof Error ? err.message : err}`,
-							);
+							debugLog(`complete FAILED: ${err instanceof Error ? err.message : err}`);
 							throw err;
 						}
 					},

@@ -19,23 +19,46 @@ function fixture(name: string): string {
 
 describe("parseYamlSubset", () => {
 	it("parses nested maps", () => {
-		const v = parseYamlSubset("a:\n  b: 1\n  c: two\n") as Record<string, unknown>;
+		const v = parseYamlSubset("a:\n  b: 1\n  c: two\n") as Record<
+			string,
+			unknown
+		>;
 		assert.deepEqual(v, { a: { b: 1, c: "two" } });
 	});
 	it("parses scalars", () => {
-		const v = parseYamlSubset('n: 42\nf: 3.5\nb: true\nb2: false\ns: hello\nq: "quoted"\nnullv: null\n') as Record<string, unknown>;
-		assert.deepEqual(v, { n: 42, f: 3.5, b: true, b2: false, s: "hello", q: "quoted", nullv: null });
+		const v = parseYamlSubset(
+			'n: 42\nf: 3.5\nb: true\nb2: false\ns: hello\nq: "quoted"\nnullv: null\n',
+		) as Record<string, unknown>;
+		assert.deepEqual(v, {
+			n: 42,
+			f: 3.5,
+			b: true,
+			b2: false,
+			s: "hello",
+			q: "quoted",
+			nullv: null,
+		});
 	});
 	it("parses flow lists", () => {
-		const v = parseYamlSubset('l: [read, "grep", 3]\n') as Record<string, unknown>;
+		const v = parseYamlSubset('l: [read, "grep", 3]\n') as Record<
+			string,
+			unknown
+		>;
 		assert.deepEqual(v, { l: ["read", "grep", 3] });
 	});
 	it("parses block sequences of maps", () => {
-		const v = parseYamlSubset("- name: a\n  x: 1\n- name: b\n  x: 2\n") as unknown[];
-		assert.deepEqual(v, [{ name: "a", x: 1 }, { name: "b", x: 2 }]);
+		const v = parseYamlSubset(
+			"- name: a\n  x: 1\n- name: b\n  x: 2\n",
+		) as unknown[];
+		assert.deepEqual(v, [
+			{ name: "a", x: 1 },
+			{ name: "b", x: 2 },
+		]);
 	});
 	it("parses literal block strings preserving # and quotes", () => {
-		const v = parseYamlSubset('p: |\n  line one # not a comment\n  "quoted"\n') as Record<string, unknown>;
+		const v = parseYamlSubset(
+			'p: |\n  line one # not a comment\n  "quoted"\n',
+		) as Record<string, unknown>;
 		assert.equal(v["p"], 'line one # not a comment\n"quoted"\n');
 	});
 	it("block string |- strips trailing newline", () => {
@@ -43,7 +66,10 @@ describe("parseYamlSubset", () => {
 		assert.equal(v["p"], "a\nb");
 	});
 	it("skips full-line and trailing comments", () => {
-		const v = parseYamlSubset("# top\na: 1 # trailing\n") as Record<string, unknown>;
+		const v = parseYamlSubset("# top\na: 1 # trailing\n") as Record<
+			string,
+			unknown
+		>;
 		assert.deepEqual(v, { a: 1 });
 	});
 	it("rejects tab indentation", () => {
@@ -87,21 +113,33 @@ describe("parseConfig (schema validation)", () => {
 	});
 
 	it("rejects unsupported version", () => {
-		assert.throws(() => parseConfig(fixture("watchdog-invalid-version.yml")), /version "2"/);
+		assert.throws(
+			() => parseConfig(fixture("watchdog-invalid-version.yml")),
+			/version "2"/,
+		);
 	});
 
 	it("rejects duplicate slugs", () => {
-		assert.throws(() => parseConfig(fixture("watchdog-invalid-dup-slug.yml")), /duplicate advisor slug "dup"/);
+		assert.throws(
+			() => parseConfig(fixture("watchdog-invalid-dup-slug.yml")),
+			/duplicate advisor slug "dup"/,
+		);
 	});
 
 	it("rejects model without provider/ prefix", () => {
-		assert.throws(() => parseConfig(fixture("watchdog-invalid-model.yml")), /provider\/model-id/);
+		assert.throws(
+			() => parseConfig(fixture("watchdog-invalid-model.yml")),
+			/provider\/model-id/,
+		);
 	});
 
 	it("rejects prompt over budget", () => {
 		const big = "x".repeat(PROMPT_BUDGET_CHARS + 1);
 		assert.throws(
-			() => parseConfig(`version: "1"\nadvisors:\n  - slug: big\n    model: p/m\n    prompt: "${big}"\n`),
+			() =>
+				parseConfig(
+					`version: "1"\nadvisors:\n  - slug: big\n    model: p/m\n    prompt: "${big}"\n`,
+				),
 			/budget is 5000/,
 		);
 	});
@@ -115,14 +153,20 @@ describe("parseConfig (schema validation)", () => {
 
 	it("rejects invalid slug characters", () => {
 		assert.throws(
-			() => parseConfig('version: "1"\nadvisors:\n  - slug: "Bad_Slug"\n    model: p/m\n    prompt: x\n'),
+			() =>
+				parseConfig(
+					'version: "1"\nadvisors:\n  - slug: "Bad_Slug"\n    model: p/m\n    prompt: x\n',
+				),
 			/\[a-z0-9-\]\+/,
 		);
 	});
 
 	it("rejects non-readonly tools", () => {
 		assert.throws(
-			() => parseConfig('version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    tools: [read, edit]\n'),
+			() =>
+				parseConfig(
+					'version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    tools: [read, edit]\n',
+				),
 			/"edit" is not a read-only tool/,
 		);
 	});
@@ -130,14 +174,19 @@ describe("parseConfig (schema validation)", () => {
 	it("per-N-turns requires every", () => {
 		assert.throws(
 			() =>
-				parseConfig('version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    trigger:\n      frequency: per-N-turns\n'),
+				parseConfig(
+					'version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    trigger:\n      frequency: per-N-turns\n',
+				),
 			/requires every: N/,
 		);
 	});
 
 	it("rejects bad failurePolicy", () => {
 		assert.throws(
-			() => parseConfig('version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    failurePolicy: explode\n'),
+			() =>
+				parseConfig(
+					'version: "1"\nadvisors:\n  - slug: x\n    model: p/m\n    prompt: x\n    failurePolicy: explode\n',
+				),
 			/halt \| backoff/,
 		);
 	});
@@ -161,7 +210,10 @@ describe("mergeConfigs", () => {
 		assert.equal(merged.advisors.length, 3);
 		const bySlug = new Map(merged.advisors.map((a) => [a.slug, a]));
 		assert.equal(bySlug.get("global-sec")!.model, "project/model-c");
-		assert.equal(bySlug.get("global-sec")!.prompt, "project override of global-sec");
+		assert.equal(
+			bySlug.get("global-sec")!.prompt,
+			"project override of global-sec",
+		);
 		assert.equal(bySlug.get("global-only")!.model, "global/model-b");
 		assert.equal(bySlug.get("project-only")!.model, "project/model-d");
 	});
@@ -181,7 +233,10 @@ describe("debug flag", () => {
 
 	it("debug defaults to unset and rejects non-booleans", () => {
 		assert.equal(parseConfig(`version: "1"\nadvisors: []\n`).debug, undefined);
-		assert.throws(() => parseConfig(`version: "1"\ndebug: "yes"\nadvisors: []\n`), /debug must be a boolean/);
+		assert.throws(
+			() => parseConfig(`version: "1"\ndebug: "yes"\nadvisors: []\n`),
+			/debug must be a boolean/,
+		);
 	});
 
 	it("mergeConfigs ORs the flag from either side", () => {

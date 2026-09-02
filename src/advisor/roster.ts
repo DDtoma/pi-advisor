@@ -12,8 +12,17 @@
  */
 import { join } from "node:path";
 import { loadConfigFile, mergeConfigs, type WatchdogConfig } from "./config.ts";
-import { AdvisorRuntime, type AdvisorRuntimeOptions, type AdvisorStatus } from "./runtime.ts";
-import type { DeltaSource, Injector, ModelCaller, UsageTotals } from "./types.ts";
+import {
+	AdvisorRuntime,
+	type AdvisorRuntimeOptions,
+	type AdvisorStatus,
+} from "./runtime.ts";
+import type {
+	DeltaSource,
+	Injector,
+	ModelCaller,
+	UsageTotals,
+} from "./types.ts";
 
 export interface RosterDeps {
 	source: DeltaSource;
@@ -51,14 +60,20 @@ export class AdvisorRoster {
 	load(): LoadReport {
 		this.#errors = [];
 		const globalCfg = this.#loadOne(this.#deps.globalConfigPath);
-		const projectCfg = this.#loadOne(join(this.#deps.projectRoot, "WATCHDOG.yml"));
+		const projectCfg = this.#loadOne(
+			join(this.#deps.projectRoot, "WATCHDOG.yml"),
+		);
 		const merged: WatchdogConfig = mergeConfigs(globalCfg, projectCfg);
 
 		const old = this.#runtime;
 		if (old) old.dispose();
 		if (merged.advisors.length === 0) {
 			this.#runtime = undefined;
-			return { advisorCount: 0, errors: [...this.#errors], debug: merged.debug ?? false };
+			return {
+				advisorCount: 0,
+				errors: [...this.#errors],
+				debug: merged.debug ?? false,
+			};
 		}
 		const opts: AdvisorRuntimeOptions = {
 			source: this.#deps.source,
@@ -71,7 +86,11 @@ export class AdvisorRoster {
 		this.#runtime = new AdvisorRuntime(merged.advisors, opts);
 		// Cursors start at the branch end — no history replay (ADR-005).
 		this.#runtime.reset();
-		return { advisorCount: merged.advisors.length, errors: [...this.#errors], debug: merged.debug ?? false };
+		return {
+			advisorCount: merged.advisors.length,
+			errors: [...this.#errors],
+			debug: merged.debug ?? false,
+		};
 	}
 
 	#loadOne(path: string): WatchdogConfig | undefined {
@@ -109,7 +128,12 @@ export class AdvisorRoster {
 		this.#runtime?.reset(slug);
 	}
 
-	previewNext(): { slug: string; name: string; wouldTrigger: boolean; reason: string }[] {
+	previewNext(): {
+		slug: string;
+		name: string;
+		wouldTrigger: boolean;
+		reason: string;
+	}[] {
 		return this.#runtime?.previewNext() ?? [];
 	}
 

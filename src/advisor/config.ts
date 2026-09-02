@@ -14,12 +14,16 @@
  * ConfigError at load time.
  */
 import { readFileSync } from "node:fs";
-import type { AdvisorConfig, ReadonlyToolName, TriggerConfig } from "./types.ts";
+import type {
+	AdvisorConfig,
+	ReadonlyToolName,
+	TriggerConfig,
+} from "./types.ts";
 
 export class ConfigError extends Error {
 	readonly line: number | undefined;
 	constructor(message: string, line?: number) {
-		super(line !== undefined ? `line ${line}: ${message}` : message);
+		super(line === undefined ? message : `line ${line}: ${message}`);
 		this.name = "ConfigError";
 		this.line = line;
 	}
@@ -27,7 +31,13 @@ export class ConfigError extends Error {
 
 // ─────────────────────────── YAML subset parser ───────────────────────────
 
-type YamlValue = string | number | boolean | null | YamlValue[] | { [k: string]: YamlValue };
+type YamlValue =
+	| string
+	| number
+	| boolean
+	| null
+	| YamlValue[]
+	| { [k: string]: YamlValue };
 
 interface RawLine {
 	num: number; // 1-based
@@ -98,7 +108,11 @@ class Parser {
 			if (/\t/.test(line.raw.slice(0, indent))) {
 				throw new ConfigError("tab indentation is not supported", line.num);
 			}
-			return { num: line.num, indent, text: stripTrailingComment(line.raw.trim()) };
+			return {
+				num: line.num,
+				indent,
+				text: stripTrailingComment(line.raw.trim()),
+			};
 		}
 	}
 
@@ -123,7 +137,8 @@ class Parser {
 		if (line.indent > indent) {
 			throw new ConfigError("unexpected indentation", line.num);
 		}
-		if (line.text === "-" || line.text.startsWith("- ")) return this.parseSeq(indent);
+		if (line.text === "-" || line.text.startsWith("- "))
+			return this.parseSeq(indent);
 		return this.parseMap(indent);
 	}
 
@@ -131,9 +146,19 @@ class Parser {
 		const map: { [k: string]: YamlValue } = {};
 		for (;;) {
 			const line = this.peekStructural();
-			if (!line || line.indent !== indent || line.text === "-" || line.text.startsWith("- ")) break;
+			if (
+				!line ||
+				line.indent !== indent ||
+				line.text === "-" ||
+				line.text.startsWith("- ")
+			)
+				break;
 			const m = /^([^\s:][^:]*):\s*(.*)$/.exec(line.text);
-			if (!m) throw new ConfigError(`expected "key: value", got "${line.text}"`, line.num);
+			if (!m)
+				throw new ConfigError(
+					`expected "key: value", got "${line.text}"`,
+					line.num,
+				);
 			this.takeStructural();
 			map[m[1]!.trim()] = this.parseValueAfterKey(m[2]!, indent, line.num);
 		}
@@ -144,7 +169,12 @@ class Parser {
 		const list: YamlValue[] = [];
 		for (;;) {
 			const line = this.peekStructural();
-			if (!line || line.indent !== indent || !(line.text === "-" || line.text.startsWith("- "))) break;
+			if (
+				!line ||
+				line.indent !== indent ||
+				!(line.text === "-" || line.text.startsWith("- "))
+			)
+				break;
 			const rest = line.text === "-" ? "" : line.text.slice(2).trimStart();
 			this.takeStructural();
 			if (!rest) {
@@ -163,9 +193,14 @@ class Parser {
 				map[m[1]!.trim()] = this.parseValueAfterKey(m[2]!, itemIndent, line.num);
 				for (;;) {
 					const cont = this.peekStructural();
-					if (!cont || cont.indent !== itemIndent || cont.text.startsWith("- ")) break;
+					if (!cont || cont.indent !== itemIndent || cont.text.startsWith("- "))
+						break;
 					const cm = /^([^\s:][^:]*):\s*(.*)$/.exec(cont.text);
-					if (!cm) throw new ConfigError(`expected "key: value", got "${cont.text}"`, cont.num);
+					if (!cm)
+						throw new ConfigError(
+							`expected "key: value", got "${cont.text}"`,
+							cont.num,
+						);
 					this.takeStructural();
 					map[cm[1]!.trim()] = this.parseValueAfterKey(cm[2]!, itemIndent, cont.num);
 				}
@@ -177,9 +212,16 @@ class Parser {
 		return list;
 	}
 
-	private parseValueAfterKey(rest: string, keyIndent: number, keyLine: number): YamlValue {
+	private parseValueAfterKey(
+		rest: string,
+		keyIndent: number,
+		keyLine: number,
+	): YamlValue {
 		if (rest === "|" || rest === "|-" || rest === "|+") {
-			return this.parseBlockString(keyIndent, rest === "|-" ? "strip" : rest === "|+" ? "keep" : "clip");
+			return this.parseBlockString(
+				keyIndent,
+				rest === "|-" ? "strip" : rest === "|+" ? "keep" : "clip",
+			);
 		}
 		if (rest === "") {
 			const next = this.peekStructural();
@@ -189,7 +231,10 @@ class Parser {
 		return parseScalar(rest, keyLine);
 	}
 
-	private parseBlockString(parentIndent: number, chomp: "strip" | "clip" | "keep"): string {
+	private parseBlockString(
+		parentIndent: number,
+		chomp: "strip" | "clip" | "keep",
+	): string {
 		// Reads RAW lines so blank lines, leading whitespace, and `#` inside
 		// block content are preserved literally.
 		const collected: string[] = [];
@@ -210,7 +255,8 @@ class Parser {
 			this.pos++;
 		}
 		// Trailing blank lines belong to the chomping behavior, not content.
-		while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+		while (collected.length > 0 && collected[collected.length - 1] === "")
+			collected.pop();
 		const joined = collected.join("\n");
 		if (chomp === "strip" || joined === "") return joined;
 		return joined + "\n";
@@ -221,14 +267,22 @@ function parseScalar(text: string, line: number): YamlValue {
 	if (text.startsWith("[") && text.endsWith("]")) {
 		const inner = text.slice(1, -1).trim();
 		if (!inner) return [];
-		return splitFlowList(inner, line).map((part) => parseScalar(part.trim(), line));
+		return splitFlowList(inner, line).map((part) =>
+			parseScalar(part.trim(), line),
+		);
 	}
 	if (text.startsWith('"')) {
-		if (!text.endsWith('"') || text.length < 2) throw new ConfigError("unterminated string", line);
-		return text.slice(1, -1).replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+		if (!text.endsWith('"') || text.length < 2)
+			throw new ConfigError("unterminated string", line);
+		return text
+			.slice(1, -1)
+			.replace(/\\n/g, "\n")
+			.replace(/\\"/g, '"')
+			.replace(/\\\\/g, "\\");
 	}
 	if (text.startsWith("'")) {
-		if (!text.endsWith("'") || text.length < 2) throw new ConfigError("unterminated string", line);
+		if (!text.endsWith("'") || text.length < 2)
+			throw new ConfigError("unterminated string", line);
 		return text.slice(1, -1).replace(/''/g, "'");
 	}
 	if (text === "true") return true;
@@ -287,22 +341,34 @@ function fail(message: string): never {
 	throw new ConfigError(message);
 }
 
-function asRecord(value: YamlValue | undefined, what: string): { [k: string]: YamlValue } {
+function asRecord(
+	value: YamlValue | undefined,
+	what: string,
+): { [k: string]: YamlValue } {
 	if (value === undefined || value === null) return {};
-	if (typeof value !== "object" || Array.isArray(value)) fail(`${what} must be a map`);
+	if (typeof value !== "object" || Array.isArray(value))
+		fail(`${what} must be a map`);
 	return value as { [k: string]: YamlValue };
 }
 
-function asString(value: YamlValue | undefined, what: string, opts: { required?: boolean } = {}): string | undefined {
+function asString(
+	value: YamlValue | undefined,
+	what: string,
+	opts: { required?: boolean } = {},
+): string | undefined {
 	if (value === undefined || value === null) {
 		if (opts.required) fail(`${what} is required`);
 		return undefined;
 	}
-	if (typeof value !== "string") fail(`${what} must be a string, got ${JSON.stringify(value)}`);
+	if (typeof value !== "string")
+		fail(`${what} must be a string, got ${JSON.stringify(value)}`);
 	return value;
 }
 
-function asStringList(value: YamlValue | undefined, what: string): string[] | undefined {
+function asStringList(
+	value: YamlValue | undefined,
+	what: string,
+): string[] | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (!Array.isArray(value) || value.some((v) => typeof v !== "string" || !v)) {
 		fail(`${what} must be a list of non-empty strings`);
@@ -310,20 +376,30 @@ function asStringList(value: YamlValue | undefined, what: string): string[] | un
 	return value as string[];
 }
 
-function parseTrigger(value: YamlValue | undefined, slug: string): TriggerConfig {
+function parseTrigger(
+	value: YamlValue | undefined,
+	slug: string,
+): TriggerConfig {
 	const rec = asRecord(value, `advisors[${slug}].trigger`);
-	const frequency = asString(rec["frequency"], `advisors[${slug}].trigger.frequency`) ?? "per-update";
+	const frequency =
+		asString(rec["frequency"], `advisors[${slug}].trigger.frequency`) ??
+		"per-update";
 	if (frequency !== "per-update" && frequency !== "per-N-turns") {
 		fail(`advisors[${slug}].trigger.frequency must be per-update | per-N-turns`);
 	}
-	const priority = asString(rec["priority"], `advisors[${slug}].trigger.priority`) ?? "normal";
+	const priority =
+		asString(rec["priority"], `advisors[${slug}].trigger.priority`) ?? "normal";
 	if (priority !== "low" && priority !== "normal" && priority !== "high") {
 		fail(`advisors[${slug}].trigger.priority must be low | normal | high`);
 	}
 	const everyRaw = rec["every"];
 	let every: number | undefined;
 	if (everyRaw !== undefined && everyRaw !== null) {
-		if (typeof everyRaw !== "number" || !Number.isInteger(everyRaw) || everyRaw < 1) {
+		if (
+			typeof everyRaw !== "number" ||
+			!Number.isInteger(everyRaw) ||
+			everyRaw < 1
+		) {
 			fail(`advisors[${slug}].trigger.every must be a positive integer`);
 		}
 		every = everyRaw;
@@ -336,25 +412,39 @@ function parseTrigger(value: YamlValue | undefined, slug: string): TriggerConfig
 	return trigger;
 }
 
-function parseAdvisor(raw: YamlValue, defaults: { [k: string]: YamlValue }, index: number): AdvisorConfig {
+function parseAdvisor(
+	raw: YamlValue,
+	defaults: { [k: string]: YamlValue },
+	index: number,
+): AdvisorConfig {
 	const rec = asRecord(raw, `advisors[${index}]`);
-	const slug = asString(rec["slug"], `advisors[${index}].slug`, { required: true })!;
+	const slug = asString(rec["slug"], `advisors[${index}].slug`, {
+		required: true,
+	})!;
 	if (!SLUG_RE.test(slug)) fail(`advisor slug "${slug}" must match [a-z0-9-]+`);
 	const name = asString(rec["name"], `advisors[${index}].name`) ?? slug;
 	const model =
 		asString(rec["model"], `advisors[${slug}].model`) ??
 		asString(defaults["model"], "defaults.model");
-	if (!model) fail(`advisors[${slug}].model is required (no defaults.model either)`);
+	if (!model)
+		fail(`advisors[${slug}].model is required (no defaults.model either)`);
 	if (!MODEL_RE.test(model)) {
-		fail(`advisors[${slug}].model "${model}" must look like provider/model-id[:thinking]`);
+		fail(
+			`advisors[${slug}].model "${model}" must look like provider/model-id[:thinking]`,
+		);
 	}
-	const prompt = asString(rec["prompt"], `advisors[${slug}].prompt`, { required: true })!;
+	const prompt = asString(rec["prompt"], `advisors[${slug}].prompt`, {
+		required: true,
+	})!;
 	if (prompt.length > PROMPT_BUDGET_CHARS) {
-		fail(`advisors[${slug}].prompt is ${prompt.length} chars — budget is ${PROMPT_BUDGET_CHARS}`);
+		fail(
+			`advisors[${slug}].prompt is ${prompt.length} chars — budget is ${PROMPT_BUDGET_CHARS}`,
+		);
 	}
 	const toolsRaw = asStringList(rec["tools"], `advisors[${slug}].tools`) ?? [];
 	for (const t of toolsRaw) {
-		if (!VALID_TOOLS.has(t)) fail(`advisors[${slug}].tools: "${t}" is not a read-only tool name`);
+		if (!VALID_TOOLS.has(t))
+			fail(`advisors[${slug}].tools: "${t}" is not a read-only tool name`);
 	}
 	const failurePolicy =
 		asString(rec["failurePolicy"], `advisors[${slug}].failurePolicy`) ??
@@ -393,19 +483,24 @@ function parseAdvisor(raw: YamlValue, defaults: { [k: string]: YamlValue }, inde
 	return cfg;
 }
 
-export function parseConfig(text: string, source = "WATCHDOG.yml"): WatchdogConfig {
+export function parseConfig(
+	text: string,
+	source = "WATCHDOG.yml",
+): WatchdogConfig {
 	let raw: YamlValue;
 	try {
 		raw = parseYamlSubset(text);
 	} catch (err) {
-		if (err instanceof ConfigError) throw new ConfigError(`${source}: ${err.message}`, err.line);
+		if (err instanceof ConfigError)
+			throw new ConfigError(`${source}: ${err.message}`, err.line);
 		throw err;
 	}
 	const root = asRecord(raw, "root");
 	const version = asString(root["version"], "version", { required: true })!;
 	if (version !== "1") fail(`unsupported version "${version}" (only "1")`);
 	const advisorsRaw = root["advisors"];
-	if (advisorsRaw === undefined || advisorsRaw === null) return { version: "1", advisors: [] };
+	if (advisorsRaw === undefined || advisorsRaw === null)
+		return { version: "1", advisors: [] };
 	if (!Array.isArray(advisorsRaw)) fail("advisors must be a list");
 	const defaults = asRecord(root["defaults"], "defaults");
 	const seen = new Set<string>();
@@ -419,7 +514,8 @@ export function parseConfig(text: string, source = "WATCHDOG.yml"): WatchdogConf
 	const project = asString(root["project"], "project");
 	if (project) config.project = project;
 	const debugRaw = root["debug"];
-	if (debugRaw !== undefined && typeof debugRaw !== "boolean") fail("debug must be a boolean");
+	if (debugRaw !== undefined && typeof debugRaw !== "boolean")
+		fail("debug must be a boolean");
 	if (debugRaw) config.debug = true;
 	return config;
 }
@@ -449,7 +545,10 @@ export function mergeConfigs(
 	const bySlug = new Map<string, AdvisorConfig>();
 	for (const a of globalCfg.advisors) bySlug.set(a.slug, a);
 	for (const a of projectCfg.advisors) bySlug.set(a.slug, a);
-	const merged: WatchdogConfig = { version: "1", advisors: [...bySlug.values()] };
+	const merged: WatchdogConfig = {
+		version: "1",
+		advisors: [...bySlug.values()],
+	};
 	if (projectCfg.project ?? globalCfg.project) {
 		merged.project = (projectCfg.project ?? globalCfg.project) as string;
 	}

@@ -272,6 +272,8 @@ export function parseYamlSubset(text: string): YamlValue {
 export interface WatchdogConfig {
 	version: "1";
 	project?: string;
+	/** Enable lifecycle tracing to /tmp/pi-advisor-debug.log (same as PI_ADVISOR_DEBUG=1). */
+	debug?: boolean;
 	advisors: AdvisorConfig[];
 }
 
@@ -416,6 +418,9 @@ export function parseConfig(text: string, source = "WATCHDOG.yml"): WatchdogConf
 	const config: WatchdogConfig = { version: "1", advisors };
 	const project = asString(root["project"], "project");
 	if (project) config.project = project;
+	const debugRaw = root["debug"];
+	if (debugRaw !== undefined && typeof debugRaw !== "boolean") fail("debug must be a boolean");
+	if (debugRaw) config.debug = true;
 	return config;
 }
 
@@ -448,5 +453,7 @@ export function mergeConfigs(
 	if (projectCfg.project ?? globalCfg.project) {
 		merged.project = (projectCfg.project ?? globalCfg.project) as string;
 	}
+	// debug is a switch, not an override: either side opting in turns it on.
+	if (globalCfg.debug || projectCfg.debug) merged.debug = true;
 	return merged;
 }

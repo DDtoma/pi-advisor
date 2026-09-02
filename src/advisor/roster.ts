@@ -30,6 +30,8 @@ export interface RosterDeps {
 export interface LoadReport {
 	advisorCount: number;
 	errors: string[];
+	/** Merged config `debug: true` — the glue layer uses it to enable file logging. */
+	debug: boolean;
 }
 
 export class AdvisorRoster {
@@ -56,7 +58,7 @@ export class AdvisorRoster {
 		if (old) old.dispose();
 		if (merged.advisors.length === 0) {
 			this.#runtime = undefined;
-			return { advisorCount: 0, errors: [...this.#errors] };
+			return { advisorCount: 0, errors: [...this.#errors], debug: merged.debug ?? false };
 		}
 		const opts: AdvisorRuntimeOptions = {
 			source: this.#deps.source,
@@ -69,7 +71,7 @@ export class AdvisorRoster {
 		this.#runtime = new AdvisorRuntime(merged.advisors, opts);
 		// Cursors start at the branch end — no history replay (ADR-005).
 		this.#runtime.reset();
-		return { advisorCount: merged.advisors.length, errors: [...this.#errors] };
+		return { advisorCount: merged.advisors.length, errors: [...this.#errors], debug: merged.debug ?? false };
 	}
 
 	#loadOne(path: string): WatchdogConfig | undefined {

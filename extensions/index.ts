@@ -26,10 +26,15 @@ import { createSessionSource } from "../src/pi/session-source.ts";
 
 const GLOBAL_CONFIG = join(homedir(), ".pi", "agent", "WATCHDOG.yml");
 
-/** PI_ADVISOR_DEBUG=1 appends lifecycle traces to /tmp/pi-advisor-debug.log. */
-const DEBUG = !!process.env.PI_ADVISOR_DEBUG;
+/**
+ * Lifecycle tracing to /tmp/pi-advisor-debug.log. Enabled by
+ * PI_ADVISOR_DEBUG=1 or `debug: true` in WATCHDOG.yml (applied after
+ * roster.load()); wrappers below always call debugLog, which no-ops
+ * while this is off.
+ */
+let debug = !!process.env.PI_ADVISOR_DEBUG;
 function debugLog(line: string): void {
-	if (!DEBUG) return;
+	if (!debug) return;
 	try {
 		appendFileSync(
 			"/tmp/pi-advisor-debug.log",
@@ -72,37 +77,33 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 		try {
 			const projectRoot = await detectProjectRoot(ctx);
 			const rawInjector = createInjector(pi);
-			// Debug build wraps injections with logging.
-			injector = DEBUG
-				? {
-						steer: (t, details) => {
-							debugLog(`inject steer: ${t.slice(0, 160)}`);
-							rawInjector.steer(t, details);
-						},
-					}
-				: rawInjector;
+			// Always wrap; debugLog no-ops until debug is on.
+			injector = {
+				steer: (t, details) => {
+					debugLog(`inject steer: ${t.slice(0, 160)}`);
+					rawInjector.steer(t, details);
+				},
+			};
 			const caller = createModelCaller(ctx.modelRegistry);
 			roster = new AdvisorRoster({
 				source: createSessionSource(ctx.sessionManager),
-				caller: DEBUG
-					? {
-							complete: async (req) => {
-								debugLog(
-									`complete model=${req.modelSpec} messages=${req.messages.length}`,
-								);
-								try {
-									const res = await caller.complete(req);
-									debugLog(`complete ok stopReason=${res.stopReason}`);
-									return res;
-								} catch (err) {
-									debugLog(
-										`complete FAILED: ${err instanceof Error ? err.message : err}`,
-									);
-									throw err;
-								}
-							},
+				caller: {
+					complete: async (req) => {
+						debugLog(
+							`complete model=${req.modelSpec} messages=${req.messages.length}`,
+						);
+						try {
+							const res = await caller.complete(req);
+							debugLog(`complete ok stopReason=${res.stopReason}`);
+							return res;
+						} catch (err) {
+							debugLog(
+								`complete FAILED: ${err instanceof Error ? err.message : err}`,
+							);
+							throw err;
 						}
-					: caller,
+					},
+				},
 				injector,
 				cwd: ctx.cwd,
 				globalConfigPath: GLOBAL_CONFIG,
@@ -110,6 +111,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				onEvent: onAdvisorEvent,
 			});
 			const report = roster.load();
+			if (report.debug) debug = true;
 			debugLog(
 				`session_start: loaded ${report.advisorCount} advisor(s), errors=${report.errors.length} root=${projectRoot}`,
 			);
@@ -147,7 +149,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			debugLog(`turn_end ${event.turnIndex}`);
 			const r = roster;
 			r?.onTurnEnd(event.turnIndex);
-			if (DEBUG && r) {
+			if (debug && r) {
 				void r.settle().then(() => {
 					debugLog(
 						`settled: ${r
@@ -354,6 +356,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				}
 				case "reload": {
 					const report = roster.load();
+					if (report.debug) debug = true;
 					for (const err of report.errors)
 						ctx.ui.notify(`pi-advisor config: ${err}`, "error");
 					ctx.ui.notify(`reloaded: ${report.advisorCount} advisor(s)`, "info");

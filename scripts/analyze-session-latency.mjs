@@ -13,9 +13,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 
-const sessionsDir = process.argv[2] ?? join(homedir(), ".pi", "agent", "sessions");
+const sessionsDir =
+	process.argv[2] ?? join(homedir(), ".pi", "agent", "sessions");
 
-const FILE_TOKEN_RE = /[\w@.+-]+\.(?:ts|tsx|js|mjs|cjs|jsx|py|el|elc|md|json|ya?ml|toml|rs|go|java|rb|sh|bash|sql|css|scss|html|vue|svelte|c|cc|cpp|h|hpp|lua|vim|org|nix)(?::\d+(?:,\d+)?)?/g;
+const FILE_TOKEN_RE =
+	/[\w@.+-]+\.(?:ts|tsx|js|mjs|cjs|jsx|py|el|elc|md|json|ya?ml|toml|rs|go|java|rb|sh|bash|sql|css|scss|html|vue|svelte|c|cc|cpp|h|hpp|lua|vim|org|nix)(?::\d+(?:,\d+)?)?/g;
 
 function* walk(dir) {
 	for (const name of readdirSync(dir)) {
@@ -44,7 +46,10 @@ function pathsOfMessage(message) {
 				if (typeof v === "string") scanText(v);
 			}
 			if (typeof b.arguments.command === "string") scanText(b.arguments.command);
-			if (typeof b.arguments.command === "string" || typeof b.arguments.path === "string") {
+			if (
+				typeof b.arguments.command === "string" ||
+				typeof b.arguments.path === "string"
+			) {
 				// also scan old/new text in edits for file mentions
 			}
 		}
@@ -72,10 +77,19 @@ for (const file of walk(sessionsDir)) {
 	const entries = [];
 	for (const line of lines) {
 		let d;
-		try { d = JSON.parse(line); } catch { continue; }
+		try {
+			d = JSON.parse(line);
+		} catch {
+			continue;
+		}
 		entries.push(d);
 	}
-	if (!entries.some((e) => e.type === "custom_message" && e.customType === "advisory")) continue;
+	if (
+		!entries.some(
+			(e) => e.type === "custom_message" && e.customType === "advisory",
+		)
+	)
+		continue;
 	sessionCount++;
 
 	// Chronological activity index: basename → { ts, assistantTurnsBefore }
@@ -152,22 +166,36 @@ const fmt = (ms) => {
 	return `${(ms / 60_000).toFixed(1)}min`;
 };
 
-console.log(`sessions with advisories: ${sessionCount}, advisory notes: ${advisoryTotal}`);
+console.log(
+	`sessions with advisories: ${sessionCount}, advisory notes: ${advisoryTotal}`,
+);
 const matched = notes.filter((n) => n.matched);
-console.log(`notes with matchable file refs: ${matched.length} (${Math.round((matched.length / Math.max(1, notes.length)) * 100)}%)\n`);
+console.log(
+	`notes with matchable file refs: ${matched.length} (${Math.round((matched.length / Math.max(1, notes.length)) * 100)}%)\n`,
+);
 
 const stale = matched.map((n) => n.stalenessMs);
 const active = matched.map((n) => n.activeMs);
 const turns = matched.map((n) => n.turnsBetween);
 console.log("staleness (last activity on cited file → advisory delivered):");
-console.log(`  wall:   p50=${fmt(pct(stale, 50))}  p90=${fmt(pct(stale, 90))}  max=${fmt(pct(stale, 100))}`);
-console.log(`  active: p50=${fmt(pct(active, 50))}  p75=${fmt(pct(active, 75))}  p90=${fmt(pct(active, 90))}  max=${fmt(pct(active, 100))}  (wall minus idle gaps >${IDLE_GAP_MS / 60_000}min)`);
+console.log(
+	`  wall:   p50=${fmt(pct(stale, 50))}  p90=${fmt(pct(stale, 90))}  max=${fmt(pct(stale, 100))}`,
+);
+console.log(
+	`  active: p50=${fmt(pct(active, 50))}  p75=${fmt(pct(active, 75))}  p90=${fmt(pct(active, 90))}  max=${fmt(pct(active, 100))}  (wall minus idle gaps >${IDLE_GAP_MS / 60_000}min)`,
+);
 console.log("assistant turns between cited work and advisory:");
-console.log(`  p50=${pct(turns, 50)}  p75=${pct(turns, 75)}  p90=${pct(turns, 90)}  max=${pct(turns, 100)}`);
+console.log(
+	`  p50=${pct(turns, 50)}  p75=${pct(turns, 75)}  p90=${pct(turns, 90)}  max=${pct(turns, 100)}`,
+);
 
 const late = matched.filter((n) => n.activeMs > 300_000 && n.turnsBetween >= 3);
-console.log(`\ngenuinely late (active >5min AND ≥3 turns since cited work): ${late.length} (${Math.round((late.length / Math.max(1, matched.length)) * 100)}%)`);
-console.log(`  of which blocker: ${late.filter((n) => n.severity === "blocker").length}`);
+console.log(
+	`\ngenuinely late (active >5min AND ≥3 turns since cited work): ${late.length} (${Math.round((late.length / Math.max(1, matched.length)) * 100)}%)`,
+);
+console.log(
+	`  of which blocker: ${late.filter((n) => n.severity === "blocker").length}`,
+);
 
 const buckets = [
 	["<30s", 0, 30_000],
@@ -187,10 +215,16 @@ console.log("\nby severity (active p50 / p90, n):");
 for (const sev of ["blocker", "concern", "nit"]) {
 	const xs = matched.filter((n) => n.severity === sev).map((n) => n.activeMs);
 	if (xs.length === 0) continue;
-	console.log(`  ${sev.padEnd(8)} p50=${fmt(pct(xs, 50))}  p90=${fmt(pct(xs, 90))}  n=${xs.length}`);
+	console.log(
+		`  ${sev.padEnd(8)} p50=${fmt(pct(xs, 50))}  p90=${fmt(pct(xs, 90))}  n=${xs.length}`,
+	);
 }
 
 console.log("\nslowest 10 (matched) notes:");
-for (const n of [...matched].sort((a, b) => b.stalenessMs - a.stalenessMs).slice(0, 10)) {
-	console.log(`  ${fmt(n.stalenessMs).padStart(8)}  +${n.turnsBetween} turns  [${n.severity}]  ${n.session.slice(0, 16)}`);
+for (const n of [...matched]
+	.sort((a, b) => b.stalenessMs - a.stalenessMs)
+	.slice(0, 10)) {
+	console.log(
+		`  ${fmt(n.stalenessMs).padStart(8)}  +${n.turnsBetween} turns  [${n.severity}]  ${n.session.slice(0, 16)}`,
+	);
 }

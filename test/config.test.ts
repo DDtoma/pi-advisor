@@ -172,3 +172,23 @@ describe("mergeConfigs", () => {
 		assert.equal(mergeConfigs(undefined, undefined).advisors.length, 0);
 	});
 });
+
+describe("debug flag", () => {
+	it("parses top-level debug: true", () => {
+		const cfg = parseConfig(`version: "1"\ndebug: true\nadvisors: []\n`);
+		assert.equal(cfg.debug, true);
+	});
+
+	it("debug defaults to unset and rejects non-booleans", () => {
+		assert.equal(parseConfig(`version: "1"\nadvisors: []\n`).debug, undefined);
+		assert.throws(() => parseConfig(`version: "1"\ndebug: "yes"\nadvisors: []\n`), /debug must be a boolean/);
+	});
+
+	it("mergeConfigs ORs the flag from either side", () => {
+		const on = parseConfig(`version: "1"\ndebug: true\nadvisors: []\n`);
+		const off = parseConfig(`version: "1"\nadvisors: []\n`);
+		assert.equal(mergeConfigs(on, off).debug, true);
+		assert.equal(mergeConfigs(off, on).debug, true);
+		assert.equal(mergeConfigs(off, off).debug, undefined);
+	});
+});

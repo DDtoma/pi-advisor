@@ -4,6 +4,8 @@
 version: "1"
 project: example-project
 
+# debug: true  # 等价于 PI_ADVISOR_DEBUG=1:生命周期事件写 /tmp/pi-advisor-debug.log(与 /advisor debug 命令的通知弹窗是两套开关;任一来源开即生效)
+
 defaults:
   maxTokens: 80000
   failurePolicy: backoff

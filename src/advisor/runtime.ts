@@ -262,7 +262,7 @@ export class AdvisorRuntime {
 			if (slice.resetDetected) {
 				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
 			}
-			inst.queue.push({ text, turnIndex, revision: inst.revision });
+			inst.queue.push({ text, turnIndex, revision: inst.revision, queuedAt: Date.now() });
 			this.#emit(inst, `queued delta (turn ${turnIndex}, ${text.length} chars)`);
 			this.#kickDrain(inst);
 		}
@@ -350,7 +350,8 @@ export class AdvisorRuntime {
 			if (slice.resetDetected && text.trim()) {
 				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
 			}
-			if (text.trim()) inst.queue.push({ text, turnIndex: -1, revision: inst.revision });
+			if (text.trim())
+				inst.queue.push({ text, turnIndex: -1, revision: inst.revision, queuedAt: Date.now() });
 		}
 		if (inst.queue.length === 0) return "nothing new to review";
 		this.#kickDrain(inst);
@@ -467,8 +468,16 @@ export class AdvisorRuntime {
 				cwd: this.#opts.cwd,
 				allowedTools: inst.config.tools,
 			});
-			this.#emit(inst, `reviewing with ${inst.config.model} (${text.length} chars)`);
+			// Latency instrumentation: queue wait = time the oldest delta in this
+			// batch sat in the queue (single-flight backlog shows up here).
+			const oldestQueuedAt = Math.min(...batch.map((d) => d.queuedAt));
+			const queueWaitMs = Date.now() - oldestQueuedAt;
+			this.#emit(
+				inst,
+				`reviewing with ${inst.config.model} (${text.length} chars, queue wait ${queueWaitMs}ms)`,
+			);
 
+			const reviewStart = Date.now();
 			let result;
 			try {
 				result = await runWithTools(this.#opts.caller, req, executor);
@@ -494,9 +503,10 @@ export class AdvisorRuntime {
 			inst.classifierRetried = false;
 			inst.contextEscalation = "none";
 
+			const reviewMs = Date.now() - reviewStart;
 			this.#emit(
 				inst,
-				`reviewed: ${result.notes.length} note(s), tokens ↑${result.usage.input} ↓${result.usage.output}`,
+				`reviewed: ${result.notes.length} note(s), tokens ↑${result.usage.input} ↓${result.usage.output}, review ${reviewMs}ms`,
 			);
 			if (result.notes.length === 0) {
 				this.#emit(inst, "silent: no advice this batch");
@@ -505,7 +515,10 @@ export class AdvisorRuntime {
 				if (this.#guard.acceptNote(inst.config.slug, note)) {
 					try {
 						routeNote(this.#opts.injector, inst.config.name, note);
-						this.#emit(inst, `injected [${note.severity}] ${note.note.slice(0, 80)}`);
+						this.#emit(
+							inst,
+							`injected [${note.severity}] turn→inject ${Date.now() - oldestQueuedAt}ms: ${note.note.slice(0, 80)}`,
+						);
 					} catch {
 						// Injection failure must not abort remaining notes or the loop.
 					}

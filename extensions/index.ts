@@ -133,6 +133,35 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			// containment — never let an advisor error reach the primary loop
 		}
 	});
+
+	// Latency instrumentation, final hop: a steer-queued advisory only enters
+	// the session (and thus the LLM context) when the agent loop pulls it
+	// before the next LLM call. message_end for the custom advisory message
+	// marks that moment — diff its log timestamp against the runtime's
+	// `injected ... turn→inject` line to get pi-internal delivery delay.
+	pi.on("message_end", (event) => {
+		try {
+			const msg = event.message as { role?: string; customType?: string; content?: unknown };
+			if (msg.role !== "custom" || msg.customType !== "advisory") return;
+			const text =
+				typeof msg.content === "string"
+					? msg.content
+					: Array.isArray(msg.content)
+						? (msg.content as { type?: string; text?: string }[])
+								.filter((b) => b.type === "text")
+								.map((b) => b.text ?? "")
+								.join("\n")
+						: "";
+			const env = parseAdvisories(text)[0];
+			debugLog(
+				env
+					? `delivered into context [${env.severity}] ${env.advisor}: ${env.text.slice(0, 80)}`
+					: `delivered into context: ${text.slice(0, 80)}`,
+			);
+		} catch {
+			// containment
+		}
+	});
 	// ── severity-badged rendering of injected advisory messages ──
 	// Every advisory arrives as a steer-delivered customType "advisory"
 	// message, so one renderer badges every severity uniformly.

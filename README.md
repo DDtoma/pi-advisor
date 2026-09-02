@@ -54,7 +54,7 @@ pi -e /path/to/pi-advisor/extensions/index.ts
 /advisor debug [on|off]  # 调试模式:每个 advisor 的触发/跳过/评审/注入事件都弹通知
 ```
 
-`PI_ADVISOR_DEBUG=1` 时生命周期事件追加到 `/tmp/pi-advisor-debug.log`。
+`PI_ADVISOR_DEBUG=1` 时生命周期事件追加到 `/tmp/pi-advisor-debug.log`(含排队等待、评审耗时、turn→inject 延迟)。`node scripts/analyze-latency.mjs` 解析该日志，按 queue wait / review / pi delivery / total 四段输出 p50/p90/max。
 
 项目根放一个 `WATCHDOG.yml`:
 

@@ -120,6 +120,8 @@ export interface PendingDelta {
 	text: string;
 	/** Turn index from the turn_end event (for tracing/rate limits). */
 	turnIndex: number;
+	/** Enqueue time (Date.now()) — latency instrumentation: queue wait and turn→inject are measured against this. */
+	queuedAt: number;
 	/** Advisor context generation; deltas from older revisions are dropped. */
 	revision: number;
 }

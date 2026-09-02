@@ -23,6 +23,8 @@ export interface RosterDeps {
 	globalConfigPath: string;
 	projectRoot: string;
 	sleep?: (ms: number) => Promise<void>;
+	/** Trigger-activity observer, forwarded to the runtime (debug mode). */
+	onEvent?: (slug: string, message: string) => void;
 }
 
 export interface LoadReport {
@@ -63,6 +65,7 @@ export class AdvisorRoster {
 			cwd: this.#deps.cwd,
 		};
 		if (this.#deps.sleep) opts.sleep = this.#deps.sleep;
+		if (this.#deps.onEvent) opts.onEvent = this.#deps.onEvent;
 		this.#runtime = new AdvisorRuntime(merged.advisors, opts);
 		// Cursors start at the branch end — no history replay (ADR-005).
 		this.#runtime.reset();

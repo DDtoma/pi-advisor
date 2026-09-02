@@ -39,7 +39,8 @@ class FakeModelCaller implements ModelCaller {
 }
 
 class FakeInjector implements Injector {
-  steered: string[] = []; followedUp: string[] = []; nits: string[] = [];
+  steered: { text: string; details?: unknown }[] = [];
+  steer(text: string, details?: unknown) { this.steered.push({ text, details }); }
 }
 ```
 

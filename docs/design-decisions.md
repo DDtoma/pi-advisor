@@ -21,6 +21,8 @@
 
 ## ADR-002:返回通道简化为 3 条,放弃 plan-mode/ACP 感知路由
 
+**状态: 已被 ADR-013 取代(2026-08-25)** —— 保留原文存档。
+
 **决策**:severity 路由 = `blocker → steer`、`concern → followUp`、`nit → before_agent_start 攒批`。不实现 oh-my-pi 的 5 路路由(inProgress withhold / ACP defer / plan-mode pause / aside batch / steer)。
 
 **理由**:pi extension API 拿不到 plan-mode 激活状态、ACP 生命周期、以及"轮次进行中"的可靠信号。强行实现只能猜,猜错比没有更糟。3 条通道已覆盖全部 severity 的语义:blocker 打断、concern 排队、nit 静默攒批。
@@ -39,7 +41,7 @@
 
 **理由**:`runner.js:588` 显示 pi 在 `async emit()` 里 `await handler(event, ctx)`。advisor 的一次 drain 包含至少一次 LLM 调用(秒级到分钟级),若被 await,主 agent 的每轮结束都会被 advisor 拖住 —— 直接违反"主 agent 执行节奏不被 advisor 拖住"的总纲第 1 条。
 
-**推论**:`before_agent_start` 是例外 —— 它必须同步返回注入内容,因此 nit 队列的 `drain()` 操作必须是 O(1) 无 await 的纯内存操作。
+**推论**:`before_agent_start` 是例外 —— 它必须同步返回注入内容,因此 nit 队列的 `drain()` 操作必须是 O(1) 无 await 的纯内存操作。(已随 ADR-013 废弃:nit 队列已删除,扩展不再订阅 before_agent_start)
 
 ---
 
@@ -149,3 +151,16 @@
 **理由**:tokenizer 依赖(tiktoken 等)体积大、provider 间不通用;水位检查只需要"别爆",不需要精确。±20% 的误差由三级 reset 兜底。
 
 **否决**:~~引入 gpt-tokenizer~~ —— 分发体积与维护成本不值这点精度。
+
+---
+
+## ADR-013:全部 severity 统一走 steer,废弃 followUp 与 nit 攒批
+
+**状态**:已实施(2026-08-25),取代 ADR-002 的通道路由部分。
+
+**决策**:blocker/concern/nit 全部以 `pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})` 投递;删除 followUp 通道、nit 攒批队列(`nitQueue`/`drainNits`/`enqueueNit`)和 `before_agent_start` 注入钩子。`Injector` 接口收敛为 `steer(text, details?)`。
+
+**理由**:实测延迟(2026-08-25 session JSONL 分析)——followUp 在主 agent 空闲时即时投递,但忙时攒批约 9 分钟才批量回放;nit 攒批要等下一次 before_agent_start,延迟无界。advisor 的价值在于帮主 agent 尽早收敛,迟到的建议毫无作用甚至是反作用(用户原话)。未投递消息随进程重启丢失可接受:advisor 是辅助,丢失不影响主 agent 工作(ADR-005 同构)。
+
+**代价与缓解**:nit 现在也会打断主 agent 节奏;由 EmissionGuard 的 per-update 频率限制(nit 每 update 最多 1 条)+ `skipIf` + content-free 黑名单兜底。
+

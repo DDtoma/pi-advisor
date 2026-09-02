@@ -11,8 +11,7 @@
 设计哲学(移植自 oh-my-pi):
 
 - **narrate, don't decide** —— advisor 只陈述它看到的问题,不替主 agent 做决定
-- **blocker 可以打断** —— `blocker` 级别的建议以 steer 方式注入,立即改变主 agent 的方向
-- **otherwise don't** —— `concern`/`nit` 不打断,排队或在下一轮 LLM 调用前静默注入
+- **早到才有用** —— 所有等级(blocker/concern/nit)统一以 steer 投递;advisor 的作用是帮主 agent 尽早收敛,迟到的建议是反作用(ADR-013)
 - **content-free 宁可沉默** —— "看起来不错""没问题"之类的废话被直接丢弃
 - **weigh, don't blindly obey** —— 注入主 agent 的建议永远带着这个标签,主 agent 有权忽略
 
@@ -29,7 +28,7 @@
 | `#seenContext` 折叠 | 不适用(pi 无 plan-mode 上下文注入通道) | ⚠️ 省略 |
 | `AdviseTool` + `skipIf` 关卡 | `context.tools` 里的 `advise` 工具定义 + 参数校验 | ✅ 等价 |
 | `EmissionGuard`(4096 FIFO + 38 短语 + 频率) | 闭包实现,逻辑照抄 | ✅ 等价 |
-| `routeAdvice` 5 路路由 | 3 通道:steer / followUp / `before_agent_start` 攒批 | ⚠️ 简化(见 ADR-002) |
+| `routeAdvice` 5 路路由 | 单一 steer 通道(ADR-013 取代 ADR-002) | ⚠️ 简化 |
 | `maintainContext`(promote/compact/re-prime) | 字符预算 + 滚动摘要 + 版本重置 | ✅ 等价 |
 | `WATCHDOG.yml` 声明式 roster | 同格式移植 | ✅ 等价 |
 | `session-advisors.ts` 文档驻留指令表 | `docs/` + `check-docs-freshness.mjs` | ✅ 等价(形式不同) |
@@ -52,6 +51,7 @@ pi -e /path/to/pi-advisor/extensions/index.ts
 /advisor on [slug]       # 打开全部(或指定)advisor
 /advisor reset [slug]    # 清除熔断锁与历史,游标跳到 session 末尾
 /advisor reload          # 重新加载 WATCHDOG.yml(全局 + 项目)
+/advisor debug [on|off]  # 调试模式:每个 advisor 的触发/跳过/评审/注入事件都弹通知
 ```
 
 `PI_ADVISOR_DEBUG=1` 时生命周期事件追加到 `/tmp/pi-advisor-debug.log`。
@@ -83,7 +83,7 @@ advisors:
 extensions/index.ts      # 组合点:事件接线 + /advisor 命令面
 src/advisor/types.ts     # 核心契约(不依赖 pi)
 src/advisor/secrets.ts   # secret 脱敏
-src/advisor/cursor.ts    # 增量游标(sha1 指纹)
+src/advisor/cursor.ts    # 增量游标(sha1 指纹);isAdvisoryEntry 同时按 custom_message 和 XML 信封前缀过滤自身注入,防止 advisory 回喂
 src/advisor/formatter.ts # SessionEntry → markdown
 src/advisor/emission-guard.ts  # 废话过滤 + 去重 + 限流
 src/advisor/config.ts    # WATCHDOG.yml + YAML 子集解析器
@@ -94,7 +94,7 @@ src/advisor/runtime.ts   # drain / coalesce / maintainContext / 失败分类
 src/advisor/roster.ts    # 配置发现 + runtime 生命周期
 src/pi/session-source.ts # ReadonlySessionManager → DeltaSource
 src/pi/model-caller.ts   # modelRegistry.complete 封装
-src/pi/inject.ts         # steer/followUp/nitQueue → Injector
+src/pi/inject.ts         # pi.sendMessage(steer) → Injector
 test/                    # node:test 单测(无 pi 依赖)
 test/fixtures/           # WATCHDOG.yml 样例
 scripts/check-token-budget.mjs    # prompt ≤ 5000 字符 CI 闸
@@ -137,11 +137,11 @@ pi-advisor/
 │   │   ├── runtime.ts        # AdvisorRuntime:drain / coalesce / maintain / 失败分类
 │   │   ├── engine.ts         # modelRegistry.complete 封装 + 只读工具循环
 │   │   ├── emission-guard.ts # 去重 + content-free 黑名单 + 频率限制
-│   │   ├── router.ts         # severity → steer / followUp / 攒批注入
+│   │   ├── router.ts         # severity → steer 投递
 │   │   └── roster.ts         # AdvisorInstance 生命周期 + token 记账 + 状态查询
 │   └── pi/                   # pi 专用胶水层
 │       ├── session-source.ts # ReadonlySessionManager → DeltaSource
-│       └── inject.ts         # sendUserMessage / before_agent_start 封装
+│       └── inject.ts         # sendMessage(steer) 封装
 ├── test/                     # 全部不依赖 pi 的单元测试(node:test)
 ├── scripts/
 │   ├── check-token-budget.mjs    # 系统提示 token 预算 CI 检查
@@ -155,6 +155,6 @@ pi-advisor/
 
 | pi-advisor | 依赖的 pi 版本 | 关键 API |
 |---|---|---|
-| 0.1.x | pi ≥ 0.84.0 | `modelRegistry.complete`, `turn_end`, `before_agent_start`, `sendUserMessage(deliverAs)` |
+| 0.1.x | pi ≥ 0.84.0 | `modelRegistry.complete`, `turn_end`, `sendMessage(deliverAs, triggerTurn)` |
 
 `session_start` 时做能力检测,缺 API 则降级为 `/advisor status` 报"需要 pi ≥ 0.84",不 crash。

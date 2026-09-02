@@ -48,6 +48,13 @@ export interface AdvisorRuntimeOptions {
 	maxConsecutiveFailures?: number;
 	/** Injected for tests; defaults to setTimeout-backed sleep. */
 	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Optional lifecycle observer. Receives one line per notable event
+	 * (queued / skipped / reviewing / silent / injected / failed) so the
+	 * glue layer can surface trigger activity in debug mode. Must be
+	 * cheap and must never throw — it is fire-and-forget.
+	 */
+	onEvent?: (slug: string, message: string) => void;
 }
 
 export interface AdvisorStatus {
@@ -110,14 +117,55 @@ export function classifyFailure(err: unknown): FailureClass {
 
 // ─────────────────────────── focus matching (§5.3) ───────────────────────────
 
-const PATH_TOKEN_RE = /(?:^|\s|"')((?:[\w@.-]+\/)+[\w.*@-]+)/g;
+// Path-shaped token: one or more dir segments + a final segment. The prefix
+// class includes backticks because agent text almost always quotes paths
+// in markdown (e.g. `src/advisor/runtime.ts`).
+const PATH_TOKEN_RE = /(?:^|[\s"'`])((?:[\w@.-]+\/)+[\w.*@-]+)/g;
+// Absolute path token (POSIX). Matches inside text/commands; URLs degrade to
+// their path component, which then fails the workspace check and is dropped.
+const ABS_PATH_RE = /(?:^|[\s"'`])(\/(?:[\w@.-]+\/)*[\w@.*-]+)/g;
 
-/** Extract path hints from raw entries: tool-call path args + path-shaped text tokens. */
-export function extractPathHints(entries: SessionEntryLike[]): string[] {
+/**
+ * Normalize a raw path token into a workspace-relative hint.
+ * Absolute paths are relativized against cwd; anything outside the workspace
+ * (or any absolute path when cwd is unknown) is dropped because focus globs
+ * are workspace-relative and could never match it. Returns undefined to drop.
+ */
+function normalizeHint(raw: string, cwd?: string): string | undefined {
+	let p = raw.replace(/\/+$/, ""); // tolerate dir tokens like "src/"
+	if (!p) return undefined;
+	if (p.startsWith("/")) {
+		if (!cwd) return undefined;
+		const root = cwd.endsWith("/") ? cwd : `${cwd}/`;
+		if (!p.startsWith(root)) return undefined; // outside workspace
+		p = p.slice(root.length);
+		return p || undefined;
+	}
+	return p;
+}
+
+/**
+ * Extract path hints from raw entries: tool-call path args + path-shaped
+ * text tokens. Absolute paths (the norm for real read/edit/bash calls) are
+ * relativized against cwd so they can match workspace-relative focus globs.
+ */
+export function extractPathHints(entries: SessionEntryLike[], cwd?: string): string[] {
 	const hints = new Set<string>();
-	const visit = (value: unknown) => {
+	const addRaw = (raw: string | undefined) => {
+		if (!raw) return;
+		const normalized = normalizeHint(raw, cwd);
+		if (normalized) hints.add(normalized);
+	};
+	const visitArg = (value: unknown) => {
 		if (typeof value !== "string" || !value) return;
-		if (value.includes("/") && !value.startsWith("/")) hints.add(value);
+		addRaw(value);
+	};
+	const scanText = (text: string) => {
+		PATH_TOKEN_RE.lastIndex = 0;
+		let m: RegExpExecArray | null;
+		while ((m = PATH_TOKEN_RE.exec(text)) !== null) addRaw(m[1]);
+		ABS_PATH_RE.lastIndex = 0;
+		while ((m = ABS_PATH_RE.exec(text)) !== null) addRaw(m[1]);
 	};
 	for (const entry of entries) {
 		const content = entry.message?.content;
@@ -126,25 +174,24 @@ export function extractPathHints(entries: SessionEntryLike[]): string[] {
 			if (!block || typeof block !== "object") continue;
 			const b = block as { type?: string; text?: string; arguments?: Record<string, unknown> };
 			if (b.type === "toolCall" && b.arguments) {
-				for (const key of ["path", "file", "pattern", "command"]) {
-					visit(b.arguments[key]);
+				for (const key of ["path", "file", "pattern"]) {
+					visitArg(b.arguments[key]);
 				}
+				// Shell commands are compound strings, not single paths — scan them.
+				const command = b.arguments["command"];
+				if (typeof command === "string") scanText(command);
 			}
 			if (b.type === "text" && b.text) {
-				PATH_TOKEN_RE.lastIndex = 0;
-				let m: RegExpExecArray | null;
-				while ((m = PATH_TOKEN_RE.exec(b.text)) !== null) {
-					hints.add(m[1] as string);
-				}
+				scanText(b.text);
 			}
 		}
 	}
 	return [...hints];
 }
 
-export function matchesFocus(config: AdvisorConfig, entries: SessionEntryLike[]): boolean {
+export function matchesFocus(config: AdvisorConfig, entries: SessionEntryLike[], cwd?: string): boolean {
 	if (!config.focus || config.focus.length === 0) return true;
-	const hints = extractPathHints(entries);
+	const hints = extractPathHints(entries, cwd);
 	return hints.some(
 		(h) =>
 			(config.focus as string[]).some((g) => matchGlob(g, h)) &&
@@ -181,7 +228,10 @@ export class AdvisorRuntime {
 				(PRIORITY_RANK[b.config.trigger.priority ?? "normal"] ?? 1),
 		);
 		for (const inst of instances) {
-			if (!inst.config.enabled || inst.halted) continue;
+			if (!inst.config.enabled || inst.halted) {
+				this.#emit(inst, `skipped: ${inst.halted ? "halted" : "disabled"}`);
+				continue;
+			}
 			let slice;
 			try {
 				slice = this.#opts.source.slice(inst.cursor);
@@ -190,9 +240,18 @@ export class AdvisorRuntime {
 			}
 			inst.cursor = slice.next;
 			if (slice.resetDetected) this.#resetInstanceContext(inst);
-			if (slice.entries.length === 0) continue;
-			if (!matchesFocus(inst.config, slice.entries)) continue;
-			if (!this.#passesFrequency(inst)) continue;
+			if (slice.entries.length === 0) {
+				this.#emit(inst, "skipped: no new entries");
+				continue;
+			}
+			if (!matchesFocus(inst.config, slice.entries, this.#opts.cwd)) {
+				this.#emit(inst, "skipped: focus miss");
+				continue;
+			}
+			if (!this.#passesFrequency(inst)) {
+				this.#emit(inst, `skipped: frequency ${inst.turnsSinceTrigger}/${inst.config.trigger.frequency}`);
+				continue;
+			}
 			let text: string;
 			try {
 				text = renderDelta(slice.entries, inst.scrubber);
@@ -204,6 +263,7 @@ export class AdvisorRuntime {
 				text = `[advisor context was reset — full recent transcript follows]\n\n${text}`;
 			}
 			inst.queue.push({ text, turnIndex, revision: inst.revision });
+			this.#emit(inst, `queued delta (turn ${turnIndex}, ${text.length} chars)`);
 			this.#kickDrain(inst);
 		}
 	}
@@ -312,7 +372,7 @@ export class AdvisorRuntime {
 			if (inst.halted) return { ...base, wouldTrigger: false, reason: "halted" };
 			const slice = this.#opts.source.slice(inst.cursor);
 			if (slice.entries.length === 0) return { ...base, wouldTrigger: false, reason: "no new entries" };
-			if (!matchesFocus(inst.config, slice.entries)) {
+			if (!matchesFocus(inst.config, slice.entries, this.#opts.cwd)) {
 				return { ...base, wouldTrigger: false, reason: "focus miss" };
 			}
 			if (inst.config.trigger.frequency === "per-N-turns") {
@@ -347,6 +407,14 @@ export class AdvisorRuntime {
 		inst.queue = inst.queue.filter((d) => d.revision >= inst.revision);
 		inst.scrubber.reset();
 		inst.contextEscalation = "none";
+	}
+
+	#emit(inst: AdvisorInstance, message: string): void {
+		try {
+			this.#opts.onEvent?.(inst.config.slug, message);
+		} catch {
+			// Observers must never affect the runtime.
+		}
 	}
 
 	#kickDrain(inst: AdvisorInstance): void {
@@ -399,6 +467,7 @@ export class AdvisorRuntime {
 				cwd: this.#opts.cwd,
 				allowedTools: inst.config.tools,
 			});
+			this.#emit(inst, `reviewing with ${inst.config.model} (${text.length} chars)`);
 
 			let result;
 			try {
@@ -406,6 +475,10 @@ export class AdvisorRuntime {
 			} catch (err) {
 				if (epoch !== inst.epoch) continue;
 				const action = this.#handleFailure(inst, err, batch);
+				this.#emit(
+					inst,
+					`failed: ${err instanceof Error ? err.message : String(err)} → ${action}`,
+				);
 				if (action === "retry-now") continue;
 				if (action === "retry-later") return; // backoff timer re-kicks drain
 				return; // halted
@@ -421,13 +494,23 @@ export class AdvisorRuntime {
 			inst.classifierRetried = false;
 			inst.contextEscalation = "none";
 
+			this.#emit(
+				inst,
+				`reviewed: ${result.notes.length} note(s), tokens ↑${result.usage.input} ↓${result.usage.output}`,
+			);
+			if (result.notes.length === 0) {
+				this.#emit(inst, "silent: no advice this batch");
+			}
 			for (const note of result.notes) {
 				if (this.#guard.acceptNote(inst.config.slug, note)) {
 					try {
 						routeNote(this.#opts.injector, inst.config.name, note);
+						this.#emit(inst, `injected [${note.severity}] ${note.note.slice(0, 80)}`);
 					} catch {
 						// Injection failure must not abort remaining notes or the loop.
 					}
+				} else {
+					this.#emit(inst, `dropped by emission guard [${note.severity}] ${note.note.slice(0, 80)}`);
 				}
 			}
 		}

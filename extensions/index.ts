@@ -14,8 +14,10 @@ import { execFile } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseAdvisories } from "../src/advisor/router.ts";
 import { AdvisorRoster } from "../src/advisor/roster.ts";
-import { createInjector, type PiInjector } from "../src/pi/inject.ts";
+import type { Injector, Severity } from "../src/advisor/types.ts";
+import { createInjector } from "../src/pi/inject.ts";
 import { createModelCaller } from "../src/pi/model-caller.ts";
 import { createSessionSource } from "../src/pi/session-source.ts";
 
@@ -34,7 +36,15 @@ function debugLog(line: string): void {
 
 export default function piAdvisor(pi: ExtensionAPI): void {
 	let roster: AdvisorRoster | undefined;
-	let injector: PiInjector | undefined;
+	let injector: Injector | undefined;
+	let lastCtx: ExtensionContext | undefined;
+	let debugMode = false;
+
+	/** Runtime lifecycle observer: always trace to the debug log; when debug mode is on, also notify. */
+	function onAdvisorEvent(slug: string, message: string): void {
+		debugLog(`event ${slug}: ${message}`);
+		if (debugMode) lastCtx?.ui.notify(`advisor ${slug}: ${message}`, "info");
+	}
 
 	async function detectProjectRoot(ctx: ExtensionContext): Promise<string> {
 		// Note: ctx.exec exists only on command contexts, so use node here.
@@ -47,30 +57,18 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
+		lastCtx = ctx;
 		try {
 			const projectRoot = await detectProjectRoot(ctx);
 			const rawInjector = createInjector(pi);
-			// Debug build wraps injections with logging; the nit drain still
-			// has to reach the raw queue, so keep a reference for draining.
+			// Debug build wraps injections with logging.
 			injector = DEBUG
 				? {
-						steer: (t) => {
-							debugLog(`inject steer: ${t.slice(0, 160)}`);
-							rawInjector.steer(t);
-						},
-						followUp: (t) => {
-							debugLog(`inject followUp: ${t.slice(0, 160)}`);
-							rawInjector.followUp(t);
-						},
-						enqueueNit: (t) => {
-							debugLog(`inject nit: ${t.slice(0, 160)}`);
-							rawInjector.enqueueNit(t);
-						},
-						drainNits: () => rawInjector.drainNits(),
-						get nitDepth() {
-							return rawInjector.nitDepth;
-						},
-					}
+					steer: (t, details) => {
+						debugLog(`inject steer: ${t.slice(0, 160)}`);
+						rawInjector.steer(t, details);
+					},
+				}
 				: rawInjector;
 			const caller = createModelCaller(ctx.modelRegistry);
 			roster = new AdvisorRoster({
@@ -94,6 +92,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				cwd: ctx.cwd,
 				globalConfigPath: GLOBAL_CONFIG,
 				projectRoot,
+				onEvent: onAdvisorEvent,
 			});
 			const report = roster.load();
 			debugLog(`session_start: loaded ${report.advisorCount} advisor(s), errors=${report.errors.length} root=${projectRoot}`);
@@ -103,7 +102,6 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			if (report.advisorCount > 0) {
 				ctx.ui.notify(`pi-advisor: ${report.advisorCount} advisor(s) watching`, "info");
 			}
-			updateStatusWidget(ctx);
 		} catch (err) {
 			// Containment: a broken advisor system must never break the session.
 			ctx.ui.notify(`pi-advisor failed to start: ${err instanceof Error ? err.message : err}`, "warning");
@@ -124,31 +122,32 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 	pi.on("turn_end", (event) => {
 		try {
 			debugLog(`turn_end ${event.turnIndex}`);
-			roster?.onTurnEnd(event.turnIndex);
-			if (DEBUG) {
-				void roster?.settle().then(() => {
-					debugLog(`settled: ${roster?.status().map((s) => `${s.slug}(q=${s.queued},halt=${s.halted},calls=${s.usage.calls})`).join(" ")}`);
+			const r = roster;
+			r?.onTurnEnd(event.turnIndex);
+			if (DEBUG && r) {
+				void r.settle().then(() => {
+					debugLog(`settled: ${r.status().map((s) => `${s.slug}(q=${s.queued},halt=${s.halted},calls=${s.usage.calls})`).join(" ")}`);
 				});
 			}
 		} catch {
 			// containment — never let an advisor error reach the primary loop
 		}
 	});
-
-	pi.on("before_agent_start", () => {
-		const batch = injector?.drainNits();
-		if (!batch) return undefined;
-		return {
-			message: {
-				customType: "advisory",
-				content: batch,
-				display: true,
-			},
-		};
-	});
-
-	// ── severity-colored rendering of injected advisory messages ──
-	pi.registerMessageRenderer("advisory", (message, _opts, theme) => {
+	// ── severity-badged rendering of injected advisory messages ──
+	// Every advisory arrives as a steer-delivered customType "advisory"
+	// message, so one renderer badges every severity uniformly.
+	// concern deliberately avoids the theme "warning" token: most themes map
+	// it to bright yellow (#ffff00), which is unreadable on light terminal
+	// backgrounds. A fixed dark orange (256-color #d75f00) stays legible on
+	// both light and dark backgrounds.
+	const ORANGE_FG = "\x1b[38;5;166m";
+	const RESET_FG = "\x1b[39m";
+	const SEVERITY_COLOR: Record<Severity, "muted" | "error" | "orange"> = {
+		nit: "muted",
+		concern: "orange",
+		blocker: "error",
+	};
+	pi.registerMessageRenderer("advisory", (message, opts, theme) => {
 		const raw =
 			typeof message.content === "string"
 				? message.content
@@ -156,22 +155,41 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 						.filter((b): b is { type: "text"; text: string } => b.type === "text")
 						.map((b) => b.text)
 						.join("\n");
-		const colored = raw
-			.split("\n")
-			.map((line) => {
-				const sev = /severity="(\w+)"/.exec(line)?.[1];
-				if (sev === "blocker") return theme.fg("error", line);
-				if (sev === "concern") return theme.fg("warning", line);
-				if (sev === "nit") return theme.fg("muted", line);
-				return theme.fg("customMessageText", line);
-			})
-			.join("\n");
-		return new Text(`\n${colored}\n`, 1, 0);
+		const envelopes = parseAdvisories(raw);
+		if (envelopes.length === 0) {
+			// Shouldn't happen — but render something rather than nothing.
+			return new Text(`\n${theme.fg("customMessageText", raw)}\n`, 1, 0);
+		}
+		const lines: string[] = [];
+		for (const env of envelopes) {
+		const color = SEVERITY_COLOR[env.severity];
+		const paint = (text: string): string =>
+			color === "orange" ? `${ORANGE_FG}${text}${RESET_FG}` : theme.fg(color, text);
+		lines.push(paint(theme.bold(`[${env.severity.toUpperCase()}] ${env.advisor}`)));
+		for (const line of env.text.split("\n")) {
+			lines.push(paint(line));
+		}
+		}
+		// A clamped note carries its untruncated text in message.details (never
+		// in LLM context). Collapsed: one hint line. Expanded (tools-expand key,
+		// default ctrl+o): the full text.
+		const fullNote = (message.details as { fullNote?: unknown } | undefined)?.fullNote;
+		if (typeof fullNote === "string" && fullNote) {
+			if (opts.expanded) {
+				lines.push(theme.fg("muted", "── full note ──"));
+				for (const line of fullNote.split("\n")) {
+					lines.push(theme.fg("muted", line));
+				}
+			} else {
+				lines.push(theme.fg("muted", "[truncated — expand to view full note]"));
+			}
+		}
+		return new Text(`\n${lines.join("\n")}\n`, 1, 0);
 	});
 
 	// ── /advisor command ──
 	pi.registerCommand("advisor", {
-		description: "Watchdog advisors: status | next | now <slug> | off <slug> | on <slug> | reset [slug] | reload",
+		description: "Watchdog advisors: status | next | now <slug> | off <slug> | on <slug> | reset [slug] | reload | debug [on|off]",
 		getArgumentCompletions: (prefix) => {
 			const subs = ["status", "next", "now", "off", "on", "reset", "reload"];
 			const parts = prefix.split(/\s+/);
@@ -184,6 +202,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				.map((s) => ({ value: `${parts[0]} ${s}`, label: s }));
 		},
 		handler: async (args, ctx) => {
+			lastCtx = ctx;
 			if (!roster) {
 				ctx.ui.notify("pi-advisor: not loaded (no session or startup failed)", "warning");
 				return;
@@ -191,7 +210,6 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			const [sub = "status", slug] = args.trim().split(/\s+/);
 			switch (sub) {
 				case "status": {
-					updateStatusWidget(ctx);
 					const lines = statusLines(roster);
 					ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "no advisors configured", "info");
 					return;
@@ -214,7 +232,6 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 					const msg = roster.forceTrigger(slug);
 					ctx.ui.notify(msg, msg.startsWith("triggered") ? "info" : "warning");
 					await roster.settle();
-					updateStatusWidget(ctx);
 					return;
 				}
 				case "off":
@@ -225,25 +242,32 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 						const all = roster.status().map((s) => s.slug);
 						for (const s of all) roster.setEnabled(s, enable);
 						ctx.ui.notify(`all advisors ${enable ? "enabled" : "disabled"} (${all.length})`, "info");
-						updateStatusWidget(ctx);
 						return;
 					}
 					const ok = roster.setEnabled(slug, enable);
 					ctx.ui.notify(ok ? `${slug} ${enable ? "enabled" : "disabled"}` : `unknown advisor: ${slug}`, ok ? "info" : "warning");
-					updateStatusWidget(ctx);
 					return;
 				}
 				case "reset": {
 					roster.reset(slug);
 					ctx.ui.notify(slug ? `reset ${slug}` : "reset all advisors", "info");
-					updateStatusWidget(ctx);
+					return;
+				}
+				case "debug": {
+					const arg = slug?.toLowerCase();
+					if (arg === "on") debugMode = true;
+					else if (arg === "off") debugMode = false;
+					else debugMode = !debugMode;
+					ctx.ui.notify(
+						`advisor debug mode: ${debugMode ? "on — every advisor event will be shown as a notification" : "off"}`,
+						"info",
+					);
 					return;
 				}
 				case "reload": {
 					const report = roster.load();
 					for (const err of report.errors) ctx.ui.notify(`pi-advisor config: ${err}`, "error");
 					ctx.ui.notify(`reloaded: ${report.advisorCount} advisor(s)`, "info");
-					updateStatusWidget(ctx);
 					return;
 				}
 				default:
@@ -262,13 +286,5 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 				`usage=${s.usage.input}↑/${s.usage.output}↓ (${s.usage.calls} calls)`
 			);
 		});
-	}
-
-	function updateStatusWidget(ctx: ExtensionContext): void {
-		if (!roster || roster.status().length === 0) {
-			ctx.ui.setWidget("advisor", undefined);
-			return;
-		}
-		ctx.ui.setWidget("advisor", statusLines(roster));
 	}
 }

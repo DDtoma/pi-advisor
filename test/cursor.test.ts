@@ -103,4 +103,38 @@ describe("cursor", () => {
 		const out = sliceEntries(branch, { count: 2, fingerprints: [fingerprintEntry(branch[0] as SessionEntryLike)] });
 		assert.equal(out.resetDetected, true);
 	});
+
+	it("isAdvisoryEntry matches advisory XML envelope user messages", () => {
+		const envelope = "<advisory advisor=\"Correctness\" severity=\"concern\">\nnote\n</advisory>";
+		assert.equal(isAdvisoryEntry(msg("user", envelope)), true);
+	});
+
+	it("isAdvisoryEntry matches string-content envelope user messages", () => {
+		const entry: SessionEntryLike = {
+			type: "message",
+			message: { role: "user", content: "<advisory advisor=\"A\" severity=\"nit\">\nx\n</advisory>" },
+		};
+		assert.equal(isAdvisoryEntry(entry), true);
+	});
+
+	it("isAdvisoryEntry keeps genuine user messages mentioning advisories", () => {
+		assert.equal(isAdvisoryEntry(msg("user", "please fix the bug")), false);
+		assert.equal(isAdvisoryEntry(msg("user", "what does <advisory mean here?")), false);
+	});
+
+	it("isAdvisoryEntry ignores envelopes quoted by other roles", () => {
+		const quoted = "<advisory advisor=\"A\" severity=\"nit\">\nx\n</advisory>";
+		assert.equal(isAdvisoryEntry(msg("toolResult", quoted)), false);
+		assert.equal(isAdvisoryEntry(msg("assistant", quoted)), false);
+	});
+
+	it("envelope user messages are skipped from delivery but counted", () => {
+		const branch = [
+			msg("user", "real question"),
+			msg("user", "<advisory advisor=\"A\" severity=\"nit\">\nx\n</advisory>"),
+		];
+		const out = sliceEntries(branch, emptyCursor());
+		assert.equal(out.entries.length, 1);
+		assert.equal(out.next.count, 2);
+	});
 });

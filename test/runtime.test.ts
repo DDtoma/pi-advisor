@@ -75,7 +75,7 @@ function fakeCaller(script: Script[]): {
 }
 
 interface Injection {
-	channel: "steer" | "followUp" | "nit";
+	channel: "steer";
 	text: string;
 }
 
@@ -86,12 +86,6 @@ function fakeInjector(): { injector: Injector; log: Injection[] } {
 		injector: {
 			steer: (text) => {
 				log.push({ channel: "steer", text });
-			},
-			followUp: (text) => {
-				log.push({ channel: "followUp", text });
-			},
-			enqueueNit: (text) => {
-				log.push({ channel: "nit", text });
 			},
 		},
 	};
@@ -130,19 +124,19 @@ async function runTurn(
 }
 
 describe("AdvisorRuntime: happy path", () => {
-	it("advise concern routes to followUp with advisory envelope", async () => {
+	it("advise concern routes to steer with advisory envelope", async () => {
 		const source = fakeSource([]);
 		const { caller } = fakeCaller([{ kind: "advise", note: "src/db.ts:45 string-concat SQL", severity: "concern" }]);
 		const { injector, log } = fakeInjector();
 		const rt = new AdvisorRuntime([config()], { source, caller, injector, cwd: "/tmp", sleep: noSleep });
 		await runTurn(rt, source, [userEntry("fix the query")], 0);
 		assert.equal(log.length, 1);
-		assert.equal(log[0]!.channel, "followUp");
+		assert.equal(log[0]!.channel, "steer");
 		assert.match(log[0]!.text, /<advisory advisor="TestAdvisor" severity="concern"/);
 		assert.match(log[0]!.text, /src\/db\.ts:45/);
 	});
 
-	it("blocker steers, nit batches", async () => {
+	it("blocker and nit both steer", async () => {
 		const source = fakeSource([]);
 		const { caller } = fakeCaller([
 			{ kind: "advise", note: "critical issue here", severity: "blocker" },
@@ -153,7 +147,7 @@ describe("AdvisorRuntime: happy path", () => {
 		await runTurn(rt, source, [userEntry("turn one")], 0);
 		await runTurn(rt, source, [userEntry("turn two")], 1);
 		assert.equal(log[0]!.channel, "steer");
-		assert.equal(log[1]!.channel, "nit");
+		assert.equal(log[1]!.channel, "steer");
 	});
 
 	it("silent advisor injects nothing", async () => {
@@ -400,5 +394,108 @@ describe("extractPathHints", () => {
 		]);
 		assert.ok(hints.includes("src/a.ts"));
 		assert.ok(hints.includes("lib/utils/helper.ts"));
+	});
+
+	it("relativizes absolute tool-arg paths against cwd", () => {
+		const hints = extractPathHints([
+			{ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "1", name: "read", arguments: { path: "/work/proj/src/a.ts" } },
+				{ type: "toolCall", id: "2", name: "edit", arguments: { path: "/elsewhere/outside.ts" } },
+			] } },
+		], "/work/proj");
+		assert.ok(hints.includes("src/a.ts"), "inside-workspace absolute path becomes relative");
+		assert.ok(!hints.some((h) => h.includes("outside")), "outside-workspace path dropped");
+		assert.ok(!hints.some((h) => h.startsWith("/")), "no absolute hints survive");
+	});
+
+	it("matches focus for absolute tool-arg paths under cwd", () => {
+		const cfg = config({ focus: ["**/*.ts"] });
+		const entries: SessionEntryLike[] = [
+			{ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "1", name: "read", arguments: { path: "/work/proj/src/a.ts" } },
+			] } },
+		];
+		assert.equal(matchesFocus(cfg, entries, "/work/proj"), true);
+	});
+
+	it("matches backtick-quoted and absolute paths in text", () => {
+		const hints = extractPathHints([
+			{ type: "message", message: { role: "assistant", content: [
+				{ type: "text", text: "fixed `src/advisor/runtime.ts` and /work/proj/lib/x.ts:12 done" },
+			] } },
+		], "/work/proj");
+		assert.ok(hints.includes("src/advisor/runtime.ts"), "backtick-quoted relative path");
+		assert.ok(hints.includes("lib/x.ts"), "absolute path in text relativized");
+	});
+
+	it("scans shell command args for path tokens", () => {
+		const hints = extractPathHints([
+			{ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "1", name: "bash", arguments: { command: "cat /work/proj/src/b.ts && grep foo src/c.ts" } },
+			] } },
+		], "/work/proj");
+		assert.ok(hints.includes("src/b.ts"), "absolute path inside command");
+		assert.ok(hints.includes("src/c.ts"), "relative path inside command");
+		assert.ok(!hints.some((h) => h.includes(" ")), "no whole-command junk hints");
+	});
+});
+
+describe("AdvisorRuntime: onEvent debug events", () => {
+	it("reports queued, reviewed, injected, and skip reasons", async () => {
+		const source = fakeSource([]);
+		const { caller } = fakeCaller([
+			{ kind: "advise", note: "something worth saying", severity: "concern" },
+		]);
+		const { injector } = fakeInjector();
+		const events: string[] = [];
+		const rt = new AdvisorRuntime([config(), config({ slug: "off", focus: ["**/*.go"] })], {
+			source,
+			caller,
+			injector,
+			cwd: "/tmp",
+			sleep: noSleep,
+			onEvent: (slug, message) => events.push(`${slug}: ${message}`),
+		});
+		await runTurn(rt, source, [userEntry("fix the query")], 0);
+		assert.ok(events.some((e) => e.startsWith("test: queued delta")), `queued event, got: ${events.join(" | ")}`);
+		assert.ok(events.some((e) => e.includes("reviewing with")), "reviewing event");
+		assert.ok(events.some((e) => e.includes("reviewed: 1 note(s)")), "reviewed event");
+		assert.ok(events.some((e) => e.includes("injected [concern]")), "injected event");
+		assert.ok(events.some((e) => e === "off: skipped: focus miss"), `focus-miss event, got: ${events.join(" | ")}`);
+	});
+
+	it("reports silence when the advisor has nothing to say", async () => {
+		const source = fakeSource([]);
+		const { caller } = fakeCaller([{ kind: "text", text: "looks fine" }]);
+		const { injector } = fakeInjector();
+		const events: string[] = [];
+		const rt = new AdvisorRuntime([config()], {
+			source,
+			caller,
+			injector,
+			cwd: "/tmp",
+			sleep: noSleep,
+			onEvent: (slug, message) => events.push(`${slug}: ${message}`),
+		});
+		await runTurn(rt, source, [userEntry("hello")], 0);
+		assert.ok(events.some((e) => e === "test: silent: no advice this batch"), `silent event, got: ${events.join(" | ")}`);
+	});
+
+	it("a throwing observer never affects the runtime", async () => {
+		const source = fakeSource([]);
+		const { caller } = fakeCaller([{ kind: "advise", note: "still delivered", severity: "concern" }]);
+		const { injector, log } = fakeInjector();
+		const rt = new AdvisorRuntime([config()], {
+			source,
+			caller,
+			injector,
+			cwd: "/tmp",
+			sleep: noSleep,
+			onEvent: () => {
+				throw new Error("observer exploded");
+			},
+		});
+		await runTurn(rt, source, [userEntry("hello")], 0);
+		assert.equal(log.length, 1);
 	});
 });

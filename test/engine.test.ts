@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { ADVISE_TOOL_DEF, TOOL_RESULT_CAP, runWithTools } from "../src/advisor/engine.ts";
+import { MAX_NOTE_CHARS } from "../src/advisor/types.ts";
 import type {
 	CompleteRequest,
 	CompleteResult,
@@ -166,6 +167,32 @@ describe("runWithTools", () => {
 		);
 		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
 		assert.equal(res.notes[0]!.skipIf, "tests failing");
+	});
+
+	it("clamps note text to MAX_NOTE_CHARS (runtime backstop)", async () => {
+		const long = "x".repeat(MAX_NOTE_CHARS + 200);
+		const { caller } = scriptedCaller(
+			toolUseResult([{ id: "c1", name: "advise", arguments: { note: long, severity: "concern" } }]),
+		);
+		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const note = res.notes[0]!;
+		assert.equal(note.note.length, MAX_NOTE_CHARS);
+		assert.ok(note.note.endsWith("…"), "clamped note ends with an ellipsis so truncation is visible");
+		assert.equal(note.fullNote, long, "untruncated text preserved on fullNote");
+	});
+
+	it("does not set fullNote when the note fits", async () => {
+		const { caller } = scriptedCaller(
+			toolUseResult([{ id: "c1", name: "advise", arguments: { note: "short", severity: "nit" } }]),
+		);
+		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		assert.equal(res.notes[0]!.note, "short");
+		assert.equal(res.notes[0]!.fullNote, undefined);
+	});
+
+	it("advise tool schema caps note via maxLength", () => {
+		const props = ADVISE_TOOL_DEF.parameters.properties as { note: { maxLength?: number } };
+		assert.equal(props.note.maxLength, MAX_NOTE_CHARS);
 	});
 
 	it("accumulates usage across rounds", async () => {

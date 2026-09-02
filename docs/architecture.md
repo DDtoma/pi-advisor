@@ -59,9 +59,7 @@ pi-advisor 是一个 **watchdog 系统**:主 agent 每结束一轮,它的工作�
 └──────┼───────────────────────────────────────────────────────────┘
        ▼
 ┌──────────────── src/pi/inject.ts(胶水层)───────────────────────┐
-│  blocker → pi.sendUserMessage(text, {deliverAs:"steer"})        │
-│  concern → pi.sendUserMessage(text, {deliverAs:"followUp"})     │
-│  nit     → nitQueue.push(); before_agent_start 时批量返回         │
+│  all severities → pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true}) │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -166,9 +164,7 @@ runtime.drain(slug)   ← 单飞:同 advisor 同时只有一个 drain
   └─ 失败 → 分类(§3.3)→ 退避/降级/熔断
   ▼
 router.route:
-  blocker → inject.steer(text)        → pi.sendUserMessage(deliverAs:"steer")
-  concern → inject.followUp(text)     → pi.sendUserMessage(deliverAs:"followUp")
-  nit     → nitQueue.push(text)       → 下一个 before_agent_start 批量返回
+  全部 severity → inject.steer(text, details?) → pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})
 ```
 
 ### 3.2 注入主会话的最终形态
@@ -179,15 +175,8 @@ src/db.ts:45 的查询用字符串拼接拼进了 userId,有注入风险,建议�
 </advisory>
 ```
 
-三条通道的语义对比:
-
-| 通道 | API | 时机 | 打断? | 适用 |
-|---|---|---|---|---|
-| steer | `sendUserMessage(text, {deliverAs:"steer"})` | 立即 | 是(打断进行中的工作) | `blocker` |
-| followUp | `sendUserMessage(text, {deliverAs:"followUp"})` | 当前工作结束后 | 否 | `concern` |
-| 攒批注入 | `before_agent_start` 返回 `{message:{customType:"advisory",content,...}}` | 下一次 LLM 调用前 | 否,且不产生额外轮次 | `nit` |
-
-⚠️ **steer 的诚实局限**(从 oh-my-pi 继承讨论):`turn_end` 时本轮已结束,steer 实际作用于"正在进行的后续轮"。若主 agent 空闲,steer 与 followUp 都等价于触发新一轮。pi 没有暴露 mid-stream 打断点,这是平台差距,不是实现偷懒(ADR-002)。
+所有 severity(blocker/concern/nit)统一走一条通道:`pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})`(ADR-013,取代 ADR-002 的三通道路由)。原先的 followUp 与 nit 攒批通道被废弃,原因是延迟:实测 followUp 在主 agent 空闲时即时投递,但忙时攒批约 9 分钟才批量回放;nit 攒批要等下一次 before_agent_start,延迟无界。advisor 的价值在于帮主 agent 尽早收敛,迟到的建议毫无作用甚至是反作用。
+⚠️ **steer 的诚实局限**(从 oh-my-pi 继承讨论):`turn_end` 时本轮已结束,steer 实际作用于"正在进行的后续轮"。若主 agent 空闲,steer 等价于触发新一轮。pi 没有暴露 mid-stream 打断点,这是平台差距,不是实现偷懒(ADR-002)。
 
 ### 3.3 失败分类与恢复(oh-my-pi `AdvisorFailureClass` 移植)
 
@@ -294,7 +283,7 @@ drain 喂批前检查 `estimateChars(history) + batch.length > charBudget`:
 | `#seenContext`(plan-mode 上下文折叠) | pi 不暴露 plan-mode 状态(ADR-006) |
 | `#modelIdentity` 检测 | pi 的 model 由 WATCHDOG.yml 显式指定,不跟随主会话换模型 |
 | `#includeThinking` 分类器降级 | 保留,但降级为"重试一次后熔断",不做 thinking 渲染开关(pi 的 delta 渲染不含 thinking 块 —— 我们从 SessionEntry 渲染,拿不到 reasoning) |
-| YieldQueue / PendingAdvisoryStore / ACP defer | pi 无 plan-mode/ACP 生命周期钩子,路由简化为 3 通道(ADR-002) |
+| YieldQueue / PendingAdvisoryStore / ACP defer | pi 无 plan-mode/ACP 生命周期钩子,路由统一为 steer(ADR-013 取代 ADR-002) |
 
 ---
 
@@ -350,7 +339,9 @@ delta 渲染前,从 entries 里提取"路径线索":工具调用的 `path`/`file
 | `/advisor reset <slug>` | 清历史、游标、熔断 latch、失败计数 |
 | `/advisor reload` | 重新发现并解析 WATCHDOG.yml,diff 应用(新增/删除/改配置) |
 
-TUI 渲染:`registerMessageRenderer("advisory", ...)` 把注入消息渲染成带 severity 颜色边框的卡片(nit=灰, concern=黄, blocker=红)。
+TUI 渲染:`registerMessageRenderer("advisory", ...)` 解析信封,给每条 advisory 加 severity 徽标并按等级整卡着色:`[NIT]`=灰、`[CONCERN]`=橙(固定 256 色 #d75f00,不用主题 warning 黄——亮色背景下不可读)、`[BLOCKER]`=红。所有 advisory 都以 steer 投递的 `customType:"advisory"` custom message 到达,统一走此渲染器。
+
+超长 note 的截断可见性:`note` 超 `MAX_NOTE_CHARS`(500)时引擎截断并补 `…`,未截断原文挂在消息的 `details.fullNote` 上(不进 LLM 上下文);渲染器折叠时显示 `[truncated — expand to view full note]`,展开(默认 ctrl+o)时显示完整原文。
 
 ---
 
@@ -369,8 +360,8 @@ runtime.ts      → types, secrets, cursor, formatter, emission-guard, engine, r
 roster.ts       → types, config, runtime
 ──────────────────────────── 以下可以 import pi ────────────────────────────
 src/pi/session-source.ts → types   (ReadonlySessionManager → DeltaSource)
-src/pi/inject.ts         → types   (pi.sendUserMessage / nitQueue → Injector)
-extensions/index.ts      → roster, src/pi/*   (唯一组合点)
+src/pi/inject.ts         → types   (pi.sendMessage → Injector)
+extensions/index.ts      → roster, router (parseAdvisories), src/pi/*   (唯一组合点)
 ```
 
 `src/advisor/` 任何文件 import pi 包 = lint 错误(CI 用简单 grep 强制)。
@@ -400,9 +391,7 @@ export interface CompleteResult {
 
 /** 注入抽象:router 对着它编程,pi/inject.ts 实现它 */
 export interface Injector {
-  steer(text: string): Promise<void>;
-  followUp(text: string): Promise<void>;
-  enqueueNit(text: string): void;   // 由 before_agent_start 消费
+  steer(text: string, details?: unknown): void;
 }
 
 /** 只读工具执行器:engine 的工具循环对着它编程 */

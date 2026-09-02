@@ -132,7 +132,7 @@ const res = await ctx.modelRegistry.complete(model, {
 
 **src/pi/model-caller.ts**:`ctx.modelRegistry.complete` 薄封装:systemPrompt/messages/tools 透传、`reasoning` 从 model 字符串冒号后缀解析、120s AbortSignal、AssistantMessage → CompleteResult 归一化。
 
-**src/pi/inject.ts**:`Injector` 实现:`<advisory ...>` 包装(architecture §3.2)、steer/followUp 直发、nit 进 `nitQueue`(数组 + `drain()` O(1))。
+**src/pi/inject.ts**:`Injector` 实现:`<advisory ...>` 包装(architecture §3.2)、全部 severity 经 `pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})` 直发;`Injector` 只剩 `steer(text, details?)`(ADR-013)。
 
 **DoD**:
 - roster 单测(mock fs):发现顺序、项目级覆盖、slug 冲突拒载
@@ -149,7 +149,6 @@ session_start   → 能力检测(api-verification §8)→ discoverRoster → 游
 session_compact → roster.resetAllCursors()
 session_shutdown→ roster.dispose()
 turn_end        → void runtime.onTurnEnd(...)
-before_agent_start → nitQueue.drain() 非空则返回注入对象(同步!)
 ```
 
 命令:`/advisor status`(widget 面板)/`next`/`now <slug>`/`off`/`on`/`reset <slug>`/`reload`。`registerMessageRenderer("advisory", ...)` 渲染 severity 色卡片。

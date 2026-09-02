@@ -25,8 +25,6 @@ function deps(globalConfigPath: string, projectRoot: string) {
 	};
 	const injector: Injector = {
 		steer: () => {},
-		followUp: () => {},
-		enqueueNit: () => {},
 	};
 	return { source, caller, injector, cwd: "/tmp", globalConfigPath, projectRoot };
 }

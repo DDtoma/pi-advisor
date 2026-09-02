@@ -25,9 +25,25 @@ export function fingerprintEntry(entry: SessionEntryLike): string {
 	return createHash("sha1").update(JSON.stringify(entry)).digest("hex");
 }
 
+const ADVISORY_ENVELOPE_RE = /^<advisory[\s>]/;
+
 /** Entries our own injections produce — never delivered back to advisors. */
 export function isAdvisoryEntry(entry: SessionEntryLike): boolean {
-	return entry.type === "custom_message" && entry.customType === "advisory";
+	// Nit batches arrive as custom_message entries.
+	if (entry.type === "custom_message" && entry.customType === "advisory") return true;
+	// Tolerance fallback: hand-inserted user-role `<advisory>` text (sessions are
+	// open files) is identified by envelope prefix so genuine user messages stay
+	// deliverable. New injections never take this path (all channels are custom_message).
+	if (entry.type !== "message") return false;
+	const message = entry.message as { role?: string; content?: unknown } | undefined;
+	if (!message || message.role !== "user") return false;
+	const content = message.content;
+	if (typeof content === "string") return ADVISORY_ENVELOPE_RE.test(content.trimStart());
+	if (!Array.isArray(content)) return false;
+	return content.some((block) => {
+		const b = block as { type?: string; text?: unknown } | null;
+		return b?.type === "text" && typeof b.text === "string" && ADVISORY_ENVELOPE_RE.test(b.text.trimStart());
+	});
 }
 
 /**

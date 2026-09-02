@@ -27,7 +27,6 @@ pi-advisor 使用的事件:
 | `session_shutdown` | `SessionShutdownEvent` | dispose:清队列、取消在途 drain |
 | `session_compact` | `SessionCompactEvent` | 主 transcript 被压缩 → 全部 advisor 游标 reset + 上下文摘要后重建 |
 | `turn_end` | `TurnEndEvent` | **主触发点**(见 §2.1) |
-| `before_agent_start` | `BeforeAgentStartEvent` → 返回 `BeforeAgentStartEventResult` | **nit 攒批注入通道**(见 §2.2) |
 
 ### 1.2 ⚠️ 关键约束:handler 会被 pi await
 
@@ -45,13 +44,11 @@ pi.on("turn_end", (event, ctx) => {
 });
 ```
 
-`before_agent_start` 则相反 —— **必须同步返回结果对象**(它要参与 prompt 组装),所以攒批队列的读取必须是 O(1) 无 await。
-
 ### 1.3 方法与属性
 
 | 签名 | 位置 | 用途 |
 |---|---|---|
-| `sendUserMessage(content: string \| (TextContent\|ImageContent)[], options?: { deliverAs?: "steer" \| "followUp"; expandPromptTemplates?: boolean }): Promise<void>` | types.d.ts:68;`agent-session.d.ts:410` | blocker/concern 注入。`steer` = 打断进行中的工作;`followUp` = 排队等当前工作结束 |
+| `sendMessage(message: Pick<CustomMessage, "customType"\|"content"\|"display"\|"details">, options?: { triggerTurn?: boolean; deliverAs?: "steer" \| "followUp" \| "nextTurn" }): void` | types.d.ts:954-957 | advisory 注入(全部 severity:customType `"advisory"` + `deliverAs:"steer"` + `triggerTurn:true`,ADR-013)。`steer` = 打断进行中的工作;`followUp` = 排队等当前工作结束(advisor 不用,实测忙时攒批 ~9 分钟) |
 | `appendEntry(customType: string, data?: unknown): void` | types.d.ts:73 | 写 CustomEntry 到 session(不入 LLM 上下文)—— 用于 token 记账、debug 追踪 |
 | `registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> \| void }): void` | types.d.ts:38 | `/advisor status|next|now|off` |
 | `registerMessageRenderer(customType: string, renderer: MessageRenderer): void` | types.d.ts:53 | 让 `customType:"advisory"` 的消息在 TUI 里渲染成带 severity 颜色的卡片 |
@@ -84,22 +81,6 @@ export interface BeforeAgentStartEventResult {
   /** 多个 extension 返回时链式替换 */
   systemPrompt?: string;
 }
-```
-
-nit 注入:
-
-```ts
-pi.on("before_agent_start", () => {
-  const batch = nitQueue.drain();
-  if (batch.length === 0) return;
-  return {
-    message: {
-      customType: "advisory",
-      content: batch.join("\n\n"),
-      display: true,
-    },
-  };
-});
 ```
 
 此消息进入 LLM 上下文(类型是 CustomMessage,带 `customType:"advisory"`),下轮游标切片时按 `customType` 过滤,**防递归闭环**。
@@ -270,8 +251,7 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 | `modelRegistry.complete` 存在 | `typeof ctx.modelRegistry.complete === "function"` | 全部 advisor unavailable,`/advisor status` 提示升级 pi |
 | advisor 模型已注册 | `modelRegistry.find(provider, modelId) !== undefined` | 该 advisor unavailable |
 | 模型有 auth | `modelRegistry.hasConfiguredAuth(model)` | 该 advisor unavailable,提示 `/login` |
-| `sendUserMessage` 支持 deliverAs | 签名固定,假定存在;首次调用 try/catch | 降级为 notify-only |
-| `before_agent_start` 注入 | 假定存在(types.d.ts:806) | nit 降级为 followUp |
+| `sendMessage` 支持 `deliverAs` + `triggerTurn` | 签名固定(types.d.ts:954-957),假定存在;首次调用 try/catch | 降级为 notify-only |
 
 ---
 
@@ -282,4 +262,3 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 3. `ModelRegistry.complete` 签名是否变化(§4.1)
 4. `Context.tools` 的 Tool 格式(§5.1, §5.4)
 5. `runner.js` 是否仍 await handler(§1.2)
-6. `BeforeAgentStartEventResult.message` 是否仍接受 customType(§2.2)

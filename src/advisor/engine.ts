@@ -11,6 +11,7 @@
  * ends — the advisor has said what it wanted to say. Any other stopReason
  * ends the loop. Hard cap of MAX_TOOL_ROUNDS complete() calls per batch.
  */
+import { MAX_NOTE_CHARS } from "./types.ts";
 import type {
 	AdvisorAssistantMessage,
 	AdvisorNote,
@@ -113,6 +114,11 @@ export async function runWithTools(
  * Validate + coerce advise tool arguments into an AdvisorNote.
  * Missing/empty note → undefined (call ignored). Unknown severity coerces
  * to "concern" — a real note with a typo'd severity is still worth hearing.
+ * Note text is clamped to MAX_NOTE_CHARS here as a runtime backstop for the
+ * schema's maxLength (not all model APIs enforce JSON Schema constraints).
+ * Clamping appends "…" so truncation is visible, and preserves the
+ * untruncated text on `fullNote` (routed to message details, never to
+ * the LLM context).
  */
 function parseAdviseArgs(args: Record<string, unknown>): AdvisorNote | undefined {
 	const text = args["note"];
@@ -121,7 +127,13 @@ function parseAdviseArgs(args: Record<string, unknown>): AdvisorNote | undefined
 	const severity: Severity = VALID_SEVERITIES.has(sevRaw as Severity)
 		? (sevRaw as Severity)
 		: "concern";
-	const note: AdvisorNote = { note: text.trim(), severity };
+	const trimmed = text.trim();
+	const clamped = trimmed.length > MAX_NOTE_CHARS;
+	const note: AdvisorNote = {
+		note: clamped ? `${trimmed.slice(0, MAX_NOTE_CHARS - 1)}…` : trimmed,
+		severity,
+	};
+	if (clamped) note.fullNote = trimmed;
 	if (typeof args["skipIf"] === "string" && args["skipIf"].trim()) {
 		note.skipIf = args["skipIf"].trim();
 	}
@@ -136,7 +148,11 @@ export const ADVISE_TOOL_DEF = {
 	parameters: {
 		type: "object",
 		properties: {
-			note: { type: "string", description: "Concrete, actionable observation. Cite file:line." },
+			note: {
+				type: "string",
+				description: "Concrete, actionable observation. Cite file:line.",
+				maxLength: MAX_NOTE_CHARS,
+			},
 			severity: { type: "string", enum: ["nit", "concern", "blocker"] },
 			skipIf: {
 				type: "string",

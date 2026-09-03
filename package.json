@@ -22,6 +22,6 @@
   "keywords": ["pi", "extension", "advisor", "watchdog", "llm", "review"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/llight/pi-advisor.git"
+    "url": "https://github.com/DDtoma/pi-advisor.git"
   }
 }

@@ -36,11 +36,17 @@
 ## 安装与使用
 
 ```bash
-# 全局安装
-pi install /path/to/pi-advisor
+# 从 GitHub 安装(全局)
+pi install git:github.com/DDtoma/pi-advisor
 
-# 或免安装试用
-pi -e /path/to/pi-advisor/extensions/index.ts
+# 固定到某个 tag/commit
+pi install git:github.com/DDtoma/pi-advisor@v0.1.0
+
+# 免安装试用
+pi -e git:github.com/DDtoma/pi-advisor
+
+# 本地目录安装(开发用)
+pi install /path/to/pi-advisor
 ```
 
 ```bash

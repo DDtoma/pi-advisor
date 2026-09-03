@@ -4,7 +4,7 @@
  *
  * Discovery (architecture §5.1): ~/.pi/agent/WATCHDOG.yml (global) then
  * <project-root>/WATCHDOG.yml (overrides same-slug advisors). Both paths
- * are passed IN — git-root detection is glue-layer work (extensions/).
+ * are passed IN — git-root detection is glue-layer work (root index.ts).
  *
  * Config errors never propagate: a broken file is reported in `errors`
  * and the remaining files still load (the extension must survive a typo'd

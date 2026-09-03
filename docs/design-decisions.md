@@ -6,14 +6,16 @@
 
 ## ADR-001:核心子系统与 pi 完全解耦,胶水层隔离
 
-**决策**:`src/advisor/` 下的所有模块(types/secrets/cursor/formatter/emission-guard/config/engine/router/runtime/roster)**禁止 import 任何 pi / pi-ai 包**。对 pi 的全部依赖通过三个接口注入:`DeltaSource`(主 transcript 来源)、`ModelCaller`(LLM 调用)、`Injector`(建议回注)。pi 相关实现全部放在 `src/pi/` 与 `extensions/`。
+**决策**:`src/advisor/` 下的所有模块(types/secrets/cursor/formatter/emission-guard/config/engine/router/runtime/roster)**禁止 import 任何 pi / pi-ai 包**。对 pi 的全部依赖通过三个接口注入:`DeltaSource`(主 transcript 来源)、`ModelCaller`(LLM 调用)、`Injector`(建议回注)。pi 相关实现全部放在 `src/pi/` 与包根 `index.ts`。
 
 **理由**:
+
 1. 可测试性 —— 核心逻辑(游标、防递归、脱敏、emission guard、失败分类、coalesce)是本项目复杂度最高的部分,必须能在无 pi 环境下用 `node:test` 单测
-2. pi 升级时,需要改的代码被限制在 `src/pi/` 两个文件 + `extensions/index.ts`
+2. pi 升级时,需要改的代码被限制在 `src/pi/` 两个文件 + 包根 `index.ts`
 3. 类型层面即强制:`SessionEntryLike`、`Message` 等都是结构子类型,单测喂字面量
 
 **否决**:
+
 - ~~直接在 extension 里写全部逻辑~~ —— 无法单测,pi 升级一次全盘回归
 - ~~依赖注入框架~~ —— 三个接口的手工构造注入足够,引入框架是过度工程
 
@@ -28,6 +30,7 @@
 **理由**:pi extension API 拿不到 plan-mode 激活状态、ACP 生命周期、以及"轮次进行中"的可靠信号。强行实现只能猜,猜错比没有更糟。3 条通道已覆盖全部 severity 的语义:blocker 打断、concern 排队、nit 静默攒批。
 
 **否决**:
+
 - ~~用 `ctx.isIdle()` 轮询模拟"轮次进行中"~~ —— 时序竞争,收益微小
 - ~~nit 也走 followUp~~ —— 会产生大量"只含一条小建议"的轮次,浪费主 agent token;`before_agent_start` 注入不产生额外轮次,是严格更优的 nit 通道
 
@@ -50,11 +53,13 @@
 **决策**:advisor 的工具(read/grep/find/ls/bash:只读子集)由 `engine.ts` 的工具循环直接执行(Node fs + 自实现 glob/grep),不注册为 pi 工具,不走 pi 的 ToolSession/审批系统。
 
 **理由**:
+
 1. `pi.registerTool` 注册的工具是给**主 LLM** 的,出现在主 agent 的工具列表里 —— advisor 的工具混进去会污染主 agent
 2. pi 的 ToolSession 绑定主会话的审批状态,advisor 需要一个"始终允许只读、永远拒绝写入"的独立策略,自己实现反而更严格可控
 3. 工具循环本来就是 `complete()` 之间的 ~80 行胶水:解析 toolCall → 执行 → 截断到 2000 字符 → 塞回 messages → 再 complete
 
 **否决**:
+
 - ~~给 advisor 也注册 pi 工具~~ —— 见理由 1
 - ~~bash 全开放~~ —— 安全模型第 2 条:bash 命令必须过只读模式匹配,争议命令一律拒绝
 
@@ -65,11 +70,13 @@
 **决策**:游标、advisor 历史、emission FIFO、熔断 latch 全部只在内存。pi 重启后,advisor 从 session 末尾重新起步(`session_start` 时游标放到 branch 末尾,不回放旧 transcript)。
 
 **理由**:
+
 1. 回放旧 transcript 意味着重启后第一波 drain 会把整个历史喂给 advisor —— 一次巨大的、价值可疑的 token 开销
 2. advisor 的价值密度在"近期",对几小时前的工作提建议,主 agent 早已离开那个上下文
 3. 不落盘就没有状态迁移问题,WATCHDOG.yml 是唯一持久化配置
 
 **否决**:
+
 - ~~序列化 AdvisorInstance 到 session 目录~~ —— 增加崩溃恢复、schema 迁移、stale 状态三重复杂度,换"重启后记得上次说过什么" —— emission FIFO 的意义恰恰是让 advisor 不要重复,而重启后用户容忍度天然更高
 
 ---
@@ -89,11 +96,13 @@
 **决策**:`config.ts` 内置一个 ~150 行的 YAML 子集解析器,支持:嵌套 map(2 空格缩进)、列表(`- item`)、标量(string/number/boolean)、块字符串(`|`)、注释。不引入 `yaml` npm 依赖。
 
 **理由**:
+
 1. pi extension 包对依赖敏感 —— `pi install npm:...` 的依赖解析有坑(见 packages.md 故障排除节),零运行时依赖是最稳的分发形态
 2. WATCHDOG.yml 的 schema 是固定的浅层结构,完整 YAML 规范(锚点、多行流式、标签)用不上
 3. 解析器本身是纯函数,单测覆盖成本极低
 
 **否决**:
+
 - ~~依赖 `yaml` 包~~ —— 见理由 1;若未来 schema 复杂到子集解析器撑不住(>300 行),再引入并改 ADR
 - ~~改用 JSON 配置~~ —— prompt 是多行字符串,JSON 写多行 prompt 是灾难;YAML 的 `|` 块字符串是正确工具
 
@@ -104,6 +113,7 @@
 **决策**:`formatter.ts` 渲染 assistant 消息时,丢弃 `ThinkingContent` 块,只渲染文本与工具调用。
 
 **理由**:
+
 1. oh-my-pi 的 `#includeThinking` 默认关闭,且会在分类器拒绝时主动降级 —— 说明 thinking 对 advisor 价值低而风险(分类器/预算)高
 2. 字符预算:thinking 块通常是正文的几倍
 3. advisor 评审的是"行为与结果",不是"心路历程"
@@ -127,10 +137,12 @@
 **决策**:`WATCHDOG.yml` 声明全部 advisor;加载时 slug 重复、模型非法、prompt 超预算任何一项直接拒载整个文件并报行号。advisor 的一切运行时状态以 slug 为 key。
 
 **理由**:
+
 1. "尽力加载"(跳过坏的加载好的)会让用户以为 Security 在跑,实际它因 typo 没加载 —— 静默失效是 watchdog 系统最不可接受的失败模式
 2. slug 不可变(改了视为删除+新增),运行时状态不迁移 —— 简单可预测
 
 **否决**:
+
 - ~~尽力加载~~ —— 见理由 1
 - ~~按 name 匹配状态~~ —— name 是展示文案,允许重复(全局与项目级可能同名不同配置),slug 才是身份
 
@@ -163,4 +175,3 @@
 **理由**:实测延迟(2026-08-25 session JSONL 分析)——followUp 在主 agent 空闲时即时投递,但忙时攒批约 9 分钟才批量回放;nit 攒批要等下一次 before_agent_start,延迟无界。advisor 的价值在于帮主 agent 尽早收敛,迟到的建议毫无作用甚至是反作用(用户原话)。未投递消息随进程重启丢失可接受:advisor 是辅助,丢失不影响主 agent 工作(ADR-005 同构)。
 
 **代价与缓解**:nit 现在也会打断主 agent 节奏;由 EmissionGuard 的 per-update 频率限制(nit 每 update 最多 1 条)+ `skipIf` + content-free 黑名单兜底。
-

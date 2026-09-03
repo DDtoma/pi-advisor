@@ -1,6 +1,6 @@
 # 测试策略
 
-> 原则:**核心子系统(`src/advisor/`)在无 pi 环境下 100% 可单测**(ADR-001)。胶水层(`src/pi/`)与组合点(`extensions/`)靠真实 pi 会话的端到端脚本验证。
+> 原则:**核心子系统(`src/advisor/`)在无 pi 环境下 100% 可单测**(ADR-001)。胶水层(`src/pi/`)与组合点(包根 `index.ts`)靠真实 pi 会话的端到端脚本验证。
 
 ## 1. 测试栈
 
@@ -34,7 +34,7 @@ fake 不集中存放,每个测试文件手写自己需要的 fake(工厂函数�
 
 `test/e2e/` 目录尚未建立。计划中的真实 pi 会话脚本(手动触发,不进 CI):
 
-1. **happy path**:fixture 项目放 WATCHDOG.yml(Security)→ `pi -e extensions/index.ts` → 主 agent 写 SQL 拼接 → 断言 concern/blocker 注入出现
+1. **happy path**:fixture 项目放 WATCHDOG.yml(Security)→ `pi -e index.ts` → 主 agent 写 SQL 拼接 → 断言 concern/blocker 注入出现
 2. **失败传染**:把 advisor 的 model 指向无效 provider → 主会话继续正常使用 → `/advisor status` 显示 halted
 3. **compact 后恢复**:长会话触发 `/compact` → advisor 游标 reset → 下一轮正常工作
 4. **安装形态**:`pi install` 与 `pi -e` 各跑一遍 happy path
@@ -53,7 +53,7 @@ fake 不集中存放,每个测试文件手写自己需要的 fake(工厂函数�
 ## 4. 覆盖率目标
 
 - `src/advisor/`:行覆盖 ≥ 90%,`runtime.ts` 与 `emission-guard.ts` 要求 100% 分支覆盖
-- `src/pi/` 与 `extensions/`:不设覆盖率目标,但每个文件 ≤ 80 行约束写入 review checklist(e2e 建立后由其背书)
+- `src/pi/` 与包根 `index.ts`:不设覆盖率目标,但每个文件 ≤ 80 行约束写入 review checklist(e2e 建立后由其背书)
 - 测量:`node --experimental-strip-types --experimental-test-coverage test/run.ts`
 
 ## 5. 回归规则

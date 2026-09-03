@@ -8,7 +8,11 @@
     "node": ">=22"
   },
   "pi": {
-    "extensions": ["./extensions/index.ts"]
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.1 <1.0.0",
+    "@earendil-works/pi-tui": ">=0.84.1 <1.0.0"
   },
   "scripts": {
     "test": "node --experimental-strip-types test/run.ts",

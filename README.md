@@ -86,7 +86,7 @@ advisors:
 ## 项目布局
 
 ```
-extensions/index.ts      # 组合点:事件接线 + /advisor 命令面
+index.ts                 # 组合点:事件接线 + /advisor 命令面
 src/advisor/types.ts     # 核心契约(不依赖 pi)
 src/advisor/secrets.ts   # secret 脱敏
 src/advisor/cursor.ts    # 增量游标(sha1 指纹);isAdvisoryEntry 同时按 custom_message 和 XML 信封前缀过滤自身注入,防止 advisory 回喂

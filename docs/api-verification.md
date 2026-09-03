@@ -238,9 +238,7 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 
 ### 7.1 多文件 extension 已验证可行
 
-`~/.pi/agent/npm/node_modules/pi-web-access/index.ts` 用相对导入组织 12+ 文件(`import { extractContentFromHtml } from "./extract.ts"` 等),jiti 直接解析 `.ts` 相对导入。**pi-advisor 的 `extensions/index.ts` 可以用同样的方式 import `../src/...`**。
-
-⚠️ 但注意:从 `extensions/index.ts` import `../src/advisor/runtime.ts` 时,路径跨越包根 —— 已实测确认 jiti 允许(spike 结果见 §10)。
+`~/.pi/agent/npm/node_modules/pi-web-access/index.ts` 用相对导入组织 12+ 文件(`import { extractContentFromHtml } from "./extract.ts"` 等),jiti 直接解析 `.ts` 相对导入。**pi-advisor 的包根 `index.ts` 用同样的方式 import `./src/...`**。入口位于包根,相对导入不跨越包根。
 
 ---
 
@@ -269,5 +267,5 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 
 | 假设 | 结果 | 日期 | 证据 |
 | --- | --- | --- | --- |
-| `extensions/index.ts` 可 import `../src/...` | ✅ 成立 | 2026-08-24 | spike skeleton 提交引入该 import;全部单测通过 |
+| 包根 `index.ts` 可 import `./src/...` | ✅ 成立 | 2026-08-24 | spike skeleton 提交引入该 import;全部单测通过 |
 | `modelRegistry.complete` 冒烟 | ✅ 成立 | 2026-08-25 | §4 本机实测(pi 0.84.3);`src/pi/model-caller.ts` 实际运行 |

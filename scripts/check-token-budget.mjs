@@ -9,7 +9,7 @@
  *     test/fixtures/*.yml (indentation-based extraction, matching the subset
  *     parser's block-string semantics).
  *  2. Quoted/template string literals > BUDGET chars anywhere in src/ or
- *     extensions/ (would catch an over-budget embedded prompt).
+ *     the root index.ts (would catch an over-budget embedded prompt).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -63,29 +63,30 @@ const yamlFiles = [
 for (const file of yamlFiles) {
 	const text = readFileSync(file, "utf8");
 	const rel = file.slice(root.length);
-	extractBlockStrings(text, "prompt").forEach((p, i) => check(`${rel} prompt[${i}]`, p));
+	extractBlockStrings(text, "prompt").forEach((p, i) =>
+		check(`${rel} prompt[${i}]`, p),
+	);
 }
 
-// Embedded prompts: any single string/template literal over budget in src|extensions.
-const LITERAL_RE = /`(?:[^`\\]|\\.)*`|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/gs;
-for (const dir of ["src", "extensions"]) {
-	const walk = (d) => {
-		for (const e of readdirSync(d, { withFileTypes: true })) {
-			const full = join(d, e.name);
-			if (e.isDirectory()) walk(full);
-			else if (e.name.endsWith(".ts")) files.push(full);
-		}
-	};
-	const files = [];
-	walk(join(root, dir));
-	for (const file of files) {
-		const text = readFileSync(file, "utf8");
-		for (const m of text.matchAll(LITERAL_RE)) {
-			const body = m[0].slice(1, -1);
-			if (body.length > BUDGET) {
-				const line = text.slice(0, m.index).split("\n").length;
-				check(`${file.slice(root.length)}:${line} string literal`, body);
-			}
+// Embedded prompts: any single string/template literal over budget in src|index.ts.
+const LITERAL_RE =
+	/`(?:[^`\\]|\\.)*`|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/gs;
+const files = [join(root, "index.ts")];
+const walk = (d) => {
+	for (const e of readdirSync(d, { withFileTypes: true })) {
+		const full = join(d, e.name);
+		if (e.isDirectory()) walk(full);
+		else if (e.name.endsWith(".ts")) files.push(full);
+	}
+};
+walk(join(root, "src"));
+for (const file of files) {
+	const text = readFileSync(file, "utf8");
+	for (const m of text.matchAll(LITERAL_RE)) {
+		const body = m[0].slice(1, -1);
+		if (body.length > BUDGET) {
+			const line = text.slice(0, m.index).split("\n").length;
+			check(`${file.slice(root.length)}:${line} string literal`, body);
 		}
 	}
 }

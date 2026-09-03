@@ -17,12 +17,12 @@ import { execFile } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseAdvisories } from "../src/advisor/router.ts";
-import { AdvisorRoster } from "../src/advisor/roster.ts";
-import type { Injector, Severity } from "../src/advisor/types.ts";
-import { createInjector } from "../src/pi/inject.ts";
-import { createModelCaller } from "../src/pi/model-caller.ts";
-import { createSessionSource } from "../src/pi/session-source.ts";
+import { parseAdvisories } from "./src/advisor/router.ts";
+import { AdvisorRoster } from "./src/advisor/roster.ts";
+import type { Injector, Severity } from "./src/advisor/types.ts";
+import { createInjector } from "./src/pi/inject.ts";
+import { createModelCaller } from "./src/pi/model-caller.ts";
+import { createSessionSource } from "./src/pi/session-source.ts";
 
 const GLOBAL_CONFIG = join(homedir(), ".pi", "agent", "WATCHDOG.yml");
 

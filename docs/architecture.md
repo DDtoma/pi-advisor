@@ -25,7 +25,7 @@ pi-advisor 是一个 **watchdog 系统**:主 agent 每结束一轮,它的工作�
 │              │                                                   │
 │              │ turn_end (pi 事件, handler 被 await)               │
 │              ▼                                                   │
-│   extensions/index.ts                                            │
+│   index.ts                                                       │
 │      │  void runtime.onTurnEnd()   ← fire-and-forget(ADR-003)    │
 └──────┼───────────────────────────────────────────────────────────┘
        ▼
@@ -360,7 +360,7 @@ roster.ts       → types, config, runtime
 ──────────────────────────── 以下可以 import pi ────────────────────────────
 src/pi/session-source.ts → types   (ReadonlySessionManager → DeltaSource)
 src/pi/inject.ts         → types   (pi.sendMessage → Injector)
-extensions/index.ts      → roster, router (parseAdvisories), src/pi/*   (唯一组合点)
+index.ts                 → roster, router (parseAdvisories), src/pi/*   (唯一组合点)
 ```
 
 `src/advisor/` 任何文件 import pi 包 = lint 错误(CI 用简单 grep 强制)。

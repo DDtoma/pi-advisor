@@ -1,6 +1,6 @@
 /**
  * ModelCaller implementation over ctx.modelRegistry.complete
- * (implementation-plan Step 7).
+ * (architecture §3.1, ADR-004).
  *
  * - modelSpec "provider/model-id[:thinking]" resolved via registry.find;
  *   the thinking suffix maps to the request's reasoning level.
@@ -30,11 +30,25 @@ import type {
 } from "../advisor/types.ts";
 
 const COMPLETE_TIMEOUT_MS = 120_000;
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const THINKING_LEVELS = new Set([
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+]);
 
-export function parseModelSpec(spec: string): { provider: string; modelId: string; thinking?: ThinkingLevel } {
+export function parseModelSpec(spec: string): {
+	provider: string;
+	modelId: string;
+	thinking?: ThinkingLevel;
+} {
 	const slash = spec.indexOf("/");
-	if (slash <= 0) throw permanentError(`model not found: "${spec}" (expected provider/model-id)`);
+	if (slash <= 0)
+		throw permanentError(
+			`model not found: "${spec}" (expected provider/model-id)`,
+		);
 	const rest = spec.slice(slash + 1);
 	const colon = rest.lastIndexOf(":");
 	let modelId = rest;
@@ -62,23 +76,36 @@ export function createModelCaller(registry: ModelRegistry): ModelCaller {
 	return {
 		async complete(req: CompleteRequest): Promise<CompleteResult> {
 			const spec = parseModelSpec(req.modelSpec ?? "");
-			const model: Model<Api> | undefined = registry.find(spec.provider, spec.modelId);
+			const model: Model<Api> | undefined = registry.find(
+				spec.provider,
+				spec.modelId,
+			);
 			if (!model) {
 				throw permanentError(`model not found: ${spec.provider}/${spec.modelId}`);
 			}
 			if (!registry.hasConfiguredAuth(model)) {
-				throw permanentError(`permission: no credentials configured for ${spec.provider}/${spec.modelId}`);
+				throw permanentError(
+					`permission: no credentials configured for ${spec.provider}/${spec.modelId}`,
+				);
 			}
 			const context: Context = {
 				systemPrompt: req.systemPrompt,
 				messages: req.messages.map((m) => toPiMessage(m, model)),
+				// SAFETY: CompleteRequest.tools is the pi-free mirror of pi-ai's
+				// Tool (same {name, description, parameters: Type.Object(...)} shape,
+				// api-verification §5.4); src/advisor cannot import pi-ai (ADR-001),
+				// so the structural identity is asserted here instead of by types.
 				tools: req.tools as unknown as Tool[],
 			};
 			const options: { signal: AbortSignal; reasoning?: ThinkingLevel } = {
 				signal: req.signal ?? AbortSignal.timeout(COMPLETE_TIMEOUT_MS),
 			};
 			if (spec.thinking) options.reasoning = spec.thinking;
-			const res: AssistantMessage = await registry.complete(model, context, options);
+			const res: AssistantMessage = await registry.complete(
+				model,
+				context,
+				options,
+			);
 			return {
 				stopReason: res.stopReason,
 				content: fromPiContent(res),
@@ -105,13 +132,19 @@ function toPiMessage(m: Message, model: Model<Api>): PiMessage {
 	}
 	// assistant — reconstruct the fields pi requires on replay.
 	const content = m.content
-		.filter((b): b is ContentBlock & { type: "text" | "toolCall" } =>
-			b.type === "text" || b.type === "toolCall",
+		.filter(
+			(b): b is ContentBlock & { type: "text" | "toolCall" } =>
+				b.type === "text" || b.type === "toolCall",
 		)
 		.map((b) =>
 			b.type === "text"
 				? { type: "text" as const, text: b.text }
-				: { type: "toolCall" as const, id: b.id, name: b.name, arguments: b.arguments },
+				: {
+						type: "toolCall" as const,
+						id: b.id,
+						name: b.name,
+						arguments: b.arguments,
+					},
 		);
 	return {
 		role: "assistant",
@@ -125,7 +158,12 @@ function toPiMessage(m: Message, model: Model<Api>): PiMessage {
 	};
 }
 
-const ZERO_USAGE: Usage = { input: 0, output: 0, cost: { input: 0, output: 0, total: 0 }, totalTokens: 0 } as Usage;
+const ZERO_USAGE: Usage = {
+	input: 0,
+	output: 0,
+	cost: { input: 0, output: 0, total: 0 },
+	totalTokens: 0,
+} as Usage;
 
 function fromPiContent(res: AssistantMessage): ContentBlock[] {
 	const out: ContentBlock[] = [];

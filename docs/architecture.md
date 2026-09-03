@@ -1,6 +1,6 @@
 # pi-advisor 架构设计
 
-> 实现前必读。本文档定义系统的**完整**设计 —— 不留"待补""以后再优化"的口子。每个模块的验收标准见 [implementation-plan.md](implementation-plan.md),设计取舍见 [design-decisions.md](design-decisions.md)。
+> 实现前必读。本文档定义系统的**完整**设计 —— 不留"待补""以后再优化"的口子。设计取舍见 [design-decisions.md](design-decisions.md)。
 
 ## 0. 设计总纲
 
@@ -70,7 +70,7 @@ pi-advisor 是一个 **watchdog 系统**:主 agent 每结束一轮,它的工作�
 ### 2.1 隔离的六层(与 oh-my-pi 逐层对应)
 
 | # | oh-my-pi | pi-advisor | 实现位置 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | 独立 `Agent` 实例,独立 messages | advisor 历史 = `AdvisorInstance.history: Message[]`,纯闭包数据 | `src/advisor/roster.ts` |
 | 2 | 独立 `ToolSession`(id `-advisor` 后缀) | 工具循环在 `engine.ts` 内部,直接执行 fs 操作,不走 pi 的 ToolSession | `src/advisor/engine.ts` |
 | 3 | advisor 只见渲染后 markdown | `formatter.ts` 把 `SessionEntry[]` 压扁成 `### Role\n...` 纯文本 | `src/advisor/formatter.ts` |
@@ -175,8 +175,7 @@ src/db.ts:45 的查询用字符串拼接拼进了 userId,有注入风险,建议�
 </advisory>
 ```
 
-所有 severity(blocker/concern/nit)统一走一条通道:`pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})`(ADR-013,取代 ADR-002 的三通道路由)。原先的 followUp 与 nit 攒批通道被废弃,原因是延迟:实测 followUp 在主 agent 空闲时即时投递,但忙时攒批约 9 分钟才批量回放;nit 攒批要等下一次 before_agent_start,延迟无界。advisor 的价值在于帮主 agent 尽早收敛,迟到的建议毫无作用甚至是反作用。
-⚠️ **steer 的诚实局限**(从 oh-my-pi 继承讨论):`turn_end` 时本轮已结束,steer 实际作用于"正在进行的后续轮"。若主 agent 空闲,steer 等价于触发新一轮。pi 没有暴露 mid-stream 打断点,这是平台差距,不是实现偷懒(ADR-002)。
+所有 severity(blocker/concern/nit)统一走一条通道:`pi.sendMessage({customType:"advisory"}, {deliverAs:"steer", triggerTurn:true})`(路由决策与实测依据见 ADR-013)。⚠️ **steer 的诚实局限**(从 oh-my-pi 继承讨论):`turn_end` 时本轮已结束,steer 实际作用于"正在进行的后续轮";若主 agent 空闲,steer 等价于触发新一轮。pi 没有暴露 mid-stream 打断点,这是平台差距(ADR-002)。
 
 ### 3.3 失败分类与恢复(oh-my-pi `AdvisorFailureClass` 移植)
 
@@ -208,7 +207,7 @@ export interface Cursor {
 ```
 
 | 机制 | 规则 |
-|---|---|
+| --- | --- |
 | 正常切片 | `branch.slice(cursor.count)` |
 | 压缩检测 | `branch.length < cursor.count` → reset(全量重渲染) |
 | 原位变异检测 | `branch[i]` 的指纹 ≠ `cursor.fingerprints[i]`(i < branch.length)→ reset。覆盖"长度没变但内容被编辑/压缩"的情况 |
@@ -230,8 +229,8 @@ halted: boolean
 ```
 
 | 机制 | 规则 |
-|---|---|
-| coalesce | drain 开始时,把队列里** revision 相同**的连续 delta 合并成一批喂给 advisor |
+| --- | --- |
+| coalesce | drain 开始时,把队列里**revision 相同**的连续 delta 合并成一批喂给 advisor |
 | revision 失配 | 队列里 revision < 当前 revision 的 delta 直接丢弃(其内容已被 reset 后的全量渲染覆盖) |
 | epoch 检查 | drain 的每个 await 前捕获 epoch,resume 后比对,不一致说明期间被 reset → 当前批作废重排 |
 | backlog | `/advisor status` 展示 queue.length,不阻塞主 agent(无 waitForCatchup —— pi 没有对应时机,ADR-002) |
@@ -269,7 +268,7 @@ summarizing: boolean
 drain 喂批前检查 `estimateChars(history) + batch.length > charBudget`:
 
 | 级别 | 动作 |
-|---|---|
+| --- | --- |
 | 一级:promote | 无(pi 版不需要 oh-my-pi 的 tool-result 外置 —— 我们的工具循环本来就把结果截断到 2000 字符) |
 | 二级:summarize | 调一次 `complete`(同模型,低 reasoning):`"把以下评审历史压成 ≤2000 字符的状态摘要,保留:已提过的问题、主 agent 的应对、当前关注点"`,history 替换为 `[摘要 user message]` |
 | 三级:reset | 摘要后仍超预算 → history 清空,revision++,下一批附带"上下文已重置,以下是全量近况"前缀 |
@@ -279,7 +278,7 @@ drain 喂批前检查 `estimateChars(history) + batch.length > charBudget`:
 ### 4.5 E 组:oh-my-pi 有而 pi 版明确不做的缓存
 
 | oh-my-pi | 不做的原因 |
-|---|---|
+| --- | --- |
 | `#seenContext`(plan-mode 上下文折叠) | pi 不暴露 plan-mode 状态(ADR-006) |
 | `#modelIdentity` 检测 | pi 的 model 由 WATCHDOG.yml 显式指定,不跟随主会话换模型 |
 | `#includeThinking` 分类器降级 | 保留,但降级为"重试一次后熔断",不做 thinking 渲染开关(pi 的 delta 渲染不含 thinking 块 —— 我们从 SessionEntry 渲染,拿不到 reasoning) |
@@ -331,7 +330,7 @@ delta 渲染前,从 entries 里提取"路径线索":工具调用的 `path`/`file
 ## 6. 命令面
 
 | 命令 | 行为 |
-|---|---|
+| --- | --- |
 | `/advisor status` | widget 面板:每个 advisor 的 enabled/halted、队列深度、累计 token、上次发声时间、最近一条 note 摘要 |
 | `/advisor next` | 若下一 turn_end 发生,哪些 advisor 会触发(focus 预检 + frequency 计数),以及各自的 charBudget 水位 |
 | `/advisor now <slug>` | 立即对当前未消费的 delta 跑一次(忽略 focus/frequency),结果照常走 emission guard + 路由 |
@@ -405,7 +404,7 @@ export interface ToolExecutor {
 ## 9. 性能与资源预算
 
 | 项 | 预算 | 强制方式 |
-|---|---|---|
+| --- | --- | --- |
 | advisor system prompt | ≤ 5000 字符 | `check-token-budget.mjs` CI |
 | 单条 entry 渲染 | ≤ 6000 字符,超出截断 | formatter |
 | 工具结果回灌 | ≤ 2000 字符 | engine 工具循环 |

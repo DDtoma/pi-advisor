@@ -13,7 +13,7 @@
 ### 2.1 单元测试(`test/*.test.ts`,CI 必跑)
 
 | 文件 | 覆盖目标 | 关键用例 |
-|---|---|---|
+| --- | --- | --- |
 | `secrets.test.ts` | `SecretScrubber` | 每类正则正反例;跨轮值收集一致性;FIFO 淘汰;reset |
 | `cursor.test.ts` | `sliceBranch` | 增量切片;长度回缩 reset;**原位变异 reset**(改内容不改长度);advisory 条目跳过但游标不漂移;指纹复用不重复计算 |
 | `formatter.test.ts` | `renderDelta` | 三种 role;thinking 丢弃(ADR-008);6000 字符截断尾标;toolCall/toolResult 格式;scrubber 被调用且输出无原文;空 delta |
@@ -24,41 +24,27 @@
 | `runtime.test.ts` | `AdvisorRuntime` 状态机 | drain 单飞;coalesce;reset 传播(revision/epoch);失败分类四分支与退避序列(1s→2s→4s,用 fake timers 或注入 sleep);连续失败熔断;EmissionGuard 集成;mock 任意抛错不逃出 drain |
 | `roster.test.ts` | 发现/合并/实例化 | mock fs 的两级发现;slug 冲突;`now` 忽略 focus;`reset` 清 latch;usage 汇总 |
 
-### 2.2 Fake 实现(`test/fakes.ts`)
+### 2.2 Fake 实现(内联在各测试文件)
 
-```ts
-class FakeDeltaSource implements DeltaSource {
-  constructor(public branch: SessionEntryLike[]) {}
-  slice(cursor: Cursor) { /* 复用真 cursor 逻辑,但可编程注入 resetDetected */ }
-}
-
-class FakeModelCaller implements ModelCaller {
-  script: CompleteResult[] = [];          // 每次 complete 弹一个;空了抛错(测试编排错误)
-  calls: CompleteRequest[] = [];
-  async complete(req) { this.calls.push(req); return this.script.shift()!; }
-}
-
-class FakeInjector implements Injector {
-  steered: { text: string; details?: unknown }[] = [];
-  steer(text: string, details?: unknown) { this.steered.push({ text, details }); }
-}
-```
+fake 不集中存放,每个测试文件手写自己需要的 fake(工厂函数风格),实现 `DeltaSource`/`ModelCaller`/`Injector` 接口。范例见 `test/runtime.test.ts` 的 `// ── fakes ──` 段:`fakeSource(branch)` 复用真 cursor 逻辑切片、可编程注入 reset;`fakeCaller(script)` 按脚本依次弹出 `CompleteResult`,脚本空则返回空 text 结束,并记录调用时的请求快照。
 
 **编排风格**:每个 runtime 测试都是"喂 branch → 喂 model 脚本 → 断言 injector 收到了什么"。这正是 ADR-001 解耦的红利。
 
-### 2.3 端到端(`test/e2e/`,手动触发,不进 CI)
+### 2.3 端到端(尚未建立)
 
-真实 pi 会话脚本(`test/e2e/README.md` 记录步骤):
+`test/e2e/` 目录尚未建立。计划中的真实 pi 会话脚本(手动触发,不进 CI):
 
 1. **happy path**:fixture 项目放 WATCHDOG.yml(Security)→ `pi -e extensions/index.ts` → 主 agent 写 SQL 拼接 → 断言 concern/blocker 注入出现
 2. **失败传染**:把 advisor 的 model 指向无效 provider → 主会话继续正常使用 → `/advisor status` 显示 halted
 3. **compact 后恢复**:长会话触发 `/compact` → advisor 游标 reset → 下一轮正常工作
 4. **安装形态**:`pi install` 与 `pi -e` 各跑一遍 happy path
 
+建立时在 `test/e2e/README.md` 记录步骤,并把本节标题改为常态描述。
+
 ## 3. Fixtures(`test/fixtures/`)
 
 | 文件 | 内容 |
-|---|---|
+| --- | --- |
 | `watchdog-valid.yml` | 全字段合法样例(2 个 advisor,覆盖 focus/ignore/tools/per-N-turns) |
 | `watchdog-invalid-*.yml` | 每类校验错误一个文件(slug 重复/非法 model/prompt 超预算/非法 glob/bad version) |
 | `watchdog-global.yml` + `watchdog-project.yml` | 合并语义验证(同 slug 覆盖) |
@@ -67,11 +53,11 @@ class FakeInjector implements Injector {
 ## 4. 覆盖率目标
 
 - `src/advisor/`:行覆盖 ≥ 90%,`runtime.ts` 与 `emission-guard.ts` 要求 100% 分支覆盖
-- `src/pi/` 与 `extensions/`:不设覆盖率目标(由 e2e 背书),但每个文件 ≤ 80 行约束写入 review checklist
+- `src/pi/` 与 `extensions/`:不设覆盖率目标,但每个文件 ≤ 80 行约束写入 review checklist(e2e 建立后由其背书)
 - 测量:`node --experimental-strip-types --experimental-test-coverage test/run.ts`
 
 ## 5. 回归规则
 
 1. 任何 bug 修复必须附带复现测试(先红后绿)
-2. pi 升级后,先跑 api-verification.md §9 核对清单,再跑全量测试,最后跑 e2e happy path
+2. pi 升级后,先跑 api-verification.md §9 核对清单,再跑全量测试;e2e 建立后补跑 happy path
 3. oh-my-pi 上游 emission-guard 短语表有更新时,同步拷贝并更新 ADR-009 的拷贝日期

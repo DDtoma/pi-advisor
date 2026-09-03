@@ -1,5 +1,5 @@
 /**
- * pi-advisor composition root (implementation-plan Step 8).
+ * pi-advisor composition root (architecture §1 系统全景).
  *
  * All event handlers are fire-and-forget (ADR-003): advisor failures must
  * never surface into the primary agent's event loop. Everything pi-facing

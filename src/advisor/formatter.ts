@@ -13,7 +13,7 @@
  *   ### Tool(read)
  *   <result text>
  *
- * Rules (implementation-plan Step 2):
+ * Rules (architecture §2.1 layer 3):
  *  - assistant thinking blocks are DROPPED (ADR-008: our delta source is
  *    SessionEntry-based and never contains reasoning content anyway).
  *  - each entry renders to at most MAX_ENTRY_CHARS, truncated with a tail
@@ -72,7 +72,9 @@ function renderEntry(
 ): string | undefined {
 	if (entry.type === "message" && entry.message) {
 		const role = entry.message.role;
-		const content = Array.isArray(entry.message.content) ? entry.message.content : [];
+		const content = Array.isArray(entry.message.content)
+			? entry.message.content
+			: [];
 		let body: string;
 		let header: string;
 		if (role === "user") {
@@ -97,14 +99,21 @@ function renderEntry(
 	if (entry.type === "compaction") {
 		const summary = (entry as { summary?: string }).summary;
 		if (!summary) return undefined;
-		return truncateEntry(`### System\n[context compacted]\n${scrubber.scrub(summary)}`, maxEntry);
+		return truncateEntry(
+			`### System\n[context compacted]\n${scrubber.scrub(summary)}`,
+			maxEntry,
+		);
 	}
 	// branch_summary, label, model/thinking changes, custom entries: not
 	// part of the advisor's view of the work.
 	return undefined;
 }
 
-function renderBlocks(blocks: Block[], scrubber: SecretScrubber, maxArgs: number): string {
+function renderBlocks(
+	blocks: Block[],
+	scrubber: SecretScrubber,
+	maxArgs: number,
+): string {
 	const out: string[] = [];
 	for (const block of blocks) {
 		if (block.type === "thinking" || block.type === "redacted_thinking") {
@@ -119,10 +128,10 @@ function renderBlocks(blocks: Block[], scrubber: SecretScrubber, maxArgs: number
 			const call = block as ToolCallBlock;
 			const argsJson = safeJson(call.arguments ?? {});
 			const truncatedArgs =
-				argsJson.length > maxArgs
-					? `${argsJson.slice(0, maxArgs)}…`
-					: argsJson;
-			out.push(`**Tool call:** \`${call.name ?? "unknown"}(${scrubber.scrub(truncatedArgs)})\``);
+				argsJson.length > maxArgs ? `${argsJson.slice(0, maxArgs)}…` : argsJson;
+			out.push(
+				`**Tool call:** \`${call.name ?? "unknown"}(${scrubber.scrub(truncatedArgs)})\``,
+			);
 			continue;
 		}
 		if (block.type === "toolResult") {
@@ -147,7 +156,11 @@ function resultContentToText(content: unknown): string {
 		return content
 			.map((c) => {
 				if (typeof c === "string") return c;
-				if (c && typeof c === "object" && (c as { type?: string }).type === "text") {
+				if (
+					c &&
+					typeof c === "object" &&
+					(c as { type?: string }).type === "text"
+				) {
 					return (c as { text?: string }).text ?? "";
 				}
 				return "";

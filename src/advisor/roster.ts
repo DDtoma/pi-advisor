@@ -1,6 +1,6 @@
 /**
- * Roster: config discovery + AdvisorRuntime lifecycle (implementation-plan
- * Step 7). Owns the runtime instance; reload swaps it under the commands.
+ * Roster: config discovery + AdvisorRuntime lifecycle (architecture
+ * §5.1). Owns the runtime instance; reload swaps it under the commands.
  *
  * Discovery (architecture §5.1): ~/.pi/agent/WATCHDOG.yml (global) then
  * <project-root>/WATCHDOG.yml (overrides same-slug advisors). Both paths

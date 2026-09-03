@@ -99,7 +99,11 @@ test/                    # node:test 单测(无 pi 依赖)
 test/fixtures/           # WATCHDOG.yml 样例
 scripts/check-token-budget.mjs    # prompt ≤ 5000 字符 CI 闸
 scripts/check-docs-freshness.mjs  # 文档新鲜度 CI 闸
+scripts/analyze-latency.mjs          # /tmp debug 日志四段延迟 p50/p90/max
+scripts/analyze-session-latency.mjs  # session JSONL 估算 advisory 迟到程度
 ```
+
+**架构约束(见 ADR-001)**:`src/advisor/` 禁止 import 任何 pi 包,全部 pi 依赖通过 `src/pi/` 胶水层注入。这是整个工程可测试性的根基。
 
 ## 开发
 
@@ -115,41 +119,9 @@ npm run docs:check  # 文档新鲜度
 | 文档 | 内容 |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | 系统架构:三要素(隔离/链路/缓存)的完整设计 |
-| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.3) |
+| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.4) |
 | [docs/design-decisions.md](docs/design-decisions.md) | 全部 ADR,含被否决的替代方案 |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | 模块分解、依赖顺序、每模块验收标准 |
 | [docs/testing.md](docs/testing.md) | 测试策略与 fixture 说明 |
-
-## 仓库布局
-
-```
-pi-advisor/
-├── package.json              # pi manifest: { "pi": { "extensions": ["./extensions/index.ts"] } }
-├── extensions/
-│   └── index.ts              # 唯一入口,组合 runtime + commands
-├── src/
-│   ├── advisor/              # 核心子系统(与 pi API 解耦,可单测)
-│   │   ├── types.ts          # AdvisorConfig / Severity / Note / FailureClass ...
-│   │   ├── config.ts         # WATCHDOG.yml 发现 + 解析 + 校验
-│   │   ├── cursor.ts         # 增量游标 + 指纹 + reset 检测
-│   │   ├── formatter.ts      # SessionEntry → markdown delta(含脱敏钩子)
-│   │   ├── secrets.ts        # 脱敏正则集 + 值收集
-│   │   ├── runtime.ts        # AdvisorRuntime:drain / coalesce / maintain / 失败分类
-│   │   ├── engine.ts         # modelRegistry.complete 封装 + 只读工具循环
-│   │   ├── emission-guard.ts # 去重 + content-free 黑名单 + 频率限制
-│   │   ├── router.ts         # severity → steer 投递
-│   │   └── roster.ts         # AdvisorInstance 生命周期 + token 记账 + 状态查询
-│   └── pi/                   # pi 专用胶水层
-│       ├── session-source.ts # ReadonlySessionManager → DeltaSource
-│       └── inject.ts         # sendMessage(steer) 封装
-├── test/                     # 全部不依赖 pi 的单元测试(node:test)
-├── scripts/
-│   ├── check-token-budget.mjs    # 系统提示 token 预算 CI 检查
-│   └── check-docs-freshness.mjs  # 文档-代码一致性 CI 检查
-└── docs/
-```
-
-**架构约束(见 ADR-001)**:`src/advisor/` 禁止 import 任何 pi 包,全部 pi 依赖通过 `src/pi/` 胶水层注入。这是整个工程可测试性的根基。
 
 ## 版本兼容性
 

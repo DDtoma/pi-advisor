@@ -79,9 +79,9 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			const rawInjector = createInjector(pi);
 			// Always wrap; debugLog no-ops until debug is on.
 			injector = {
-				steer: (t, details) => {
+				steer: (t) => {
 					debugLog(`inject steer: ${t.slice(0, 160)}`);
-					rawInjector.steer(t, details);
+					rawInjector.steer(t);
 				},
 			};
 			const caller = createModelCaller(ctx.modelRegistry);
@@ -211,7 +211,7 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 		concern: "orange",
 		blocker: "error",
 	};
-	pi.registerMessageRenderer("advisory", (message, opts, theme) => {
+	pi.registerMessageRenderer("advisory", (message, _opts, theme) => {
 		const raw =
 			typeof message.content === "string"
 				? message.content
@@ -236,21 +236,6 @@ export default function piAdvisor(pi: ExtensionAPI): void {
 			);
 			for (const line of env.text.split("\n")) {
 				lines.push(paint(line));
-			}
-		}
-		// A clamped note carries its untruncated text in message.details (never
-		// in LLM context). Collapsed: one hint line. Expanded (tools-expand key,
-		// default ctrl+o): the full text.
-		const fullNote = (message.details as { fullNote?: unknown } | undefined)
-			?.fullNote;
-		if (typeof fullNote === "string" && fullNote) {
-			if (opts.expanded) {
-				lines.push(theme.fg("muted", "── full note ──"));
-				for (const line of fullNote.split("\n")) {
-					lines.push(theme.fg("muted", line));
-				}
-			} else {
-				lines.push(theme.fg("muted", "[truncated — expand to view full note]"));
 			}
 		}
 		return new Text(`\n${lines.join("\n")}\n`, 1, 0);

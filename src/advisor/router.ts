@@ -33,26 +33,41 @@ export interface AdvisoryEnvelope {
  */
 export function parseAdvisories(content: string): AdvisoryEnvelope[] {
 	const out: AdvisoryEnvelope[] = [];
-	for (const m of content.matchAll(/<advisory\s+((?:"[^"]*"|[^>])*)>([\s\S]*?)<\/advisory>/g)) {
+	for (const m of content.matchAll(
+		/<advisory\s+((?:"[^"]*"|[^>])*)>([\s\S]*?)<\/advisory>/g,
+	)) {
 		const attrs = m[1] ?? "";
-		const advisor = unescapeAttr(/advisor="([^"]*)"/.exec(attrs)?.[1] ?? "advisor");
+		const advisor = unescapeAttr(
+			/advisor="([^"]*)"/.exec(attrs)?.[1] ?? "advisor",
+		);
 		const sevRaw = /severity="([^"]*)"/.exec(attrs)?.[1];
-		const severity: Severity = sevRaw === "nit" || sevRaw === "blocker" ? sevRaw : "concern";
+		const severity: Severity =
+			sevRaw === "nit" || sevRaw === "blocker" ? sevRaw : "concern";
 		const text = (m[2] ?? "").trim();
 		if (text) out.push({ advisor, severity, text });
 	}
 	return out;
 }
 
-export function routeNote(injector: Injector, advisorName: string, note: AdvisorNote): void {
+export function routeNote(
+	injector: Injector,
+	advisorName: string,
+	note: AdvisorNote,
+): void {
 	const text = formatAdvisory(advisorName, note);
-	injector.steer(text, note.fullNote ? { fullNote: note.fullNote } : undefined);
+	injector.steer(text);
 }
 
 function escapeAttr(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;");
 }
 
 function unescapeAttr(value: string): string {
-	return value.replace(/&lt;/g, "<").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+	return value
+		.replace(/&lt;/g, "<")
+		.replace(/&quot;/g, '"')
+		.replace(/&amp;/g, "&");
 }

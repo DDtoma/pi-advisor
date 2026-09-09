@@ -4,6 +4,7 @@ dist/
 .DS_Store
 coverage/
 .tmp/
+.pi/
 
 # 用户本地 advisor 配置(含个人模型选择)
 WATCHDOG.yml

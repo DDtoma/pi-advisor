@@ -11,7 +11,6 @@
  * ends — the advisor has said what it wanted to say. Any other stopReason
  * ends the loop. Hard cap of MAX_TOOL_ROUNDS complete() calls per batch.
  */
-import { MAX_NOTE_CHARS } from "./types.ts";
 import type {
 	AdvisorAssistantMessage,
 	AdvisorNote,
@@ -91,7 +90,8 @@ export async function runWithTools(
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: out.content.length > cap ? `${out.content.slice(0, cap)}…` : out.content,
+				content:
+					out.content.length > cap ? `${out.content.slice(0, cap)}…` : out.content,
 				isError: out.isError ?? false,
 			});
 		}
@@ -114,26 +114,17 @@ export async function runWithTools(
  * Validate + coerce advise tool arguments into an AdvisorNote.
  * Missing/empty note → undefined (call ignored). Unknown severity coerces
  * to "concern" — a real note with a typo'd severity is still worth hearing.
- * Note text is clamped to MAX_NOTE_CHARS here as a runtime backstop for the
- * schema's maxLength (not all model APIs enforce JSON Schema constraints).
- * Clamping appends "…" so truncation is visible, and preserves the
- * untruncated text on `fullNote` (routed to message details, never to
- * the LLM context).
  */
-function parseAdviseArgs(args: Record<string, unknown>): AdvisorNote | undefined {
+function parseAdviseArgs(
+	args: Record<string, unknown>,
+): AdvisorNote | undefined {
 	const text = args["note"];
 	if (typeof text !== "string" || !text.trim()) return undefined;
 	const sevRaw = args["severity"];
 	const severity: Severity = VALID_SEVERITIES.has(sevRaw as Severity)
 		? (sevRaw as Severity)
 		: "concern";
-	const trimmed = text.trim();
-	const clamped = trimmed.length > MAX_NOTE_CHARS;
-	const note: AdvisorNote = {
-		note: clamped ? `${trimmed.slice(0, MAX_NOTE_CHARS - 1)}…` : trimmed,
-		severity,
-	};
-	if (clamped) note.fullNote = trimmed;
+	const note: AdvisorNote = { note: text.trim(), severity };
 	if (typeof args["skipIf"] === "string" && args["skipIf"].trim()) {
 		note.skipIf = args["skipIf"].trim();
 	}
@@ -144,19 +135,19 @@ function parseAdviseArgs(args: Record<string, unknown>): AdvisorNote | undefined
 export const ADVISE_TOOL_DEF = {
 	name: "advise",
 	description:
-		"Deliver a note to the primary agent. At most one per update. NEVER repeat a note you already gave. Silence is correct when there is nothing material.",
+		"Deliver one terse note to the primary agent. At most one per update. NEVER repeat a note you already gave. Silence is correct when there is nothing material.",
 	parameters: {
 		type: "object",
 		properties: {
 			note: {
 				type: "string",
-				description: "Concrete, actionable observation. Cite file:line.",
-				maxLength: MAX_NOTE_CHARS,
+				description: "Terse, specific, actionable — 1–2 sentences. Cite file:line.",
 			},
 			severity: { type: "string", enum: ["nit", "concern", "blocker"] },
 			skipIf: {
 				type: "string",
-				description: "Short marker; if a future note still matches this, it is dropped.",
+				description:
+					"Short marker; if a future note still matches this, it is dropped.",
 			},
 		},
 		required: ["note", "severity"],

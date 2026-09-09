@@ -14,15 +14,15 @@ import type { Injector } from "../advisor/types.ts";
  * Deliver an advisory as a steering custom message.
  * triggerTurn:true ensures the message always wakes the agent.
  */
-function sendAdvisory(pi: ExtensionAPI, text: string, details?: unknown): void {
-	pi.sendMessage(
-		{ customType: "advisory", content: text, display: true, ...(details === undefined ? {} : { details }) },
-		{ deliverAs: "steer", triggerTurn: true },
-	);
+function sendAdvisory(pi: ExtensionAPI, text: string): void {
+ pi.sendMessage(
+  { customType: "advisory", content: text, display: true },
+  { deliverAs: "steer", triggerTurn: true },
+ );
 }
 
 export function createInjector(pi: ExtensionAPI): Injector {
-	return {
-		steer: (text, details) => sendAdvisory(pi, text, details),
-	};
+ return {
+  steer: (text) => sendAdvisory(pi, text),
+ };
 }

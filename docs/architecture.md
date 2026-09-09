@@ -340,8 +340,6 @@ delta 渲染前,从 entries 里提取"路径线索":工具调用的 `path`/`file
 
 TUI 渲染:`registerMessageRenderer("advisory", ...)` 解析信封,给每条 advisory 加 severity 徽标并按等级整卡着色:`[NIT]`=灰、`[CONCERN]`=橙(固定 256 色 #d75f00,不用主题 warning 黄——亮色背景下不可读)、`[BLOCKER]`=红。所有 advisory 都以 steer 投递的 `customType:"advisory"` custom message 到达,统一走此渲染器。
 
-超长 note 的截断可见性:`note` 超 `MAX_NOTE_CHARS`(500)时引擎截断并补 `…`,未截断原文挂在消息的 `details.fullNote` 上(不进 LLM 上下文);渲染器折叠时显示 `[truncated — expand to view full note]`,展开(默认 ctrl+o)时显示完整原文。
-
 ---
 
 ## 7. 模块依赖图(无环)

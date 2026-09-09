@@ -175,3 +175,15 @@
 **理由**:实测延迟(2026-08-25 session JSONL 分析)——followUp 在主 agent 空闲时即时投递,但忙时攒批约 9 分钟才批量回放;nit 攒批要等下一次 before_agent_start,延迟无界。advisor 的价值在于帮主 agent 尽早收敛,迟到的建议毫无作用甚至是反作用(用户原话)。未投递消息随进程重启丢失可接受:advisor 是辅助,丢失不影响主 agent 工作(ADR-005 同构)。
 
 **代价与缓解**:nit 现在也会打断主 agent 节奏;由 EmissionGuard 的 per-update 频率限制(nit 每 update 最多 1 条)+ `skipIf` + content-free 黑名单兜底。
+
+---
+
+## ADR-014:note 长度改为 prompt 软引导,删除运行时 clamp 与 schema maxLength
+
+**决策**:note 不再有任何长度强制:删除 advise tool schema 的 maxLength、engine 的 MAX_NOTE_CHARS 运行时 clamp、AdvisorNote.fullNote 字段(渲染器展开用)、以及 Injector.steer 的 details 参数(它唯一的生产用途就是透传 fullNote)。简短与否完全靠 WATCHDOG prompt 里的“notes ≤150 chars”软引导。
+
+**理由**:原 clamp 注释自承是 belt-and-suspenders(防不遵守 JSON Schema maxLength 的模型),但它引入了完整的一条旁路:截断文本进 LLM context、原文走 message.details 给渲染器、UI 还要处理折叠/展开。实测 prompt 引导已足够,advisor 偶发超长 note 的代价(多占一点主会话 context)远低于维护这条通道的复杂度。
+
+**代价**:失控的 advisor 模型可以 steer 任意长度 note,无运行时兜底。可接受:advisor 配置由用户显式启用(ADR-011),模型行为异常时应换模型而不是加护栏。
+
+**否决**:~~保留 details 作为通用胶水 API~~ —— 唯一调用方随 fullNote 一起删除后,它就是用一个测试养着的死通道(KISS)。

@@ -3,8 +3,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { ADVISE_TOOL_DEF, TOOL_RESULT_CAP, runWithTools } from "../src/advisor/engine.ts";
-import { MAX_NOTE_CHARS } from "../src/advisor/types.ts";
+import {
+	ADVISE_TOOL_DEF,
+	TOOL_RESULT_CAP,
+	runWithTools,
+} from "../src/advisor/engine.ts";
 import type {
 	CompleteRequest,
 	CompleteResult,
@@ -37,7 +40,9 @@ function textResult(text: string): CompleteResult {
 	return { stopReason: "stop", content: [{ type: "text", text }] };
 }
 
-function toolUseResult(calls: { id: string; name: string; arguments: Record<string, unknown> }[]): CompleteResult {
+function toolUseResult(
+	calls: { id: string; name: string; arguments: Record<string, unknown> }[],
+): CompleteResult {
 	const content: ContentBlock[] = calls.map((c) => ({
 		type: "toolCall",
 		id: c.id,
@@ -62,7 +67,11 @@ describe("runWithTools", () => {
 		const log: string[] = [];
 		const res = await runWithTools(
 			caller,
-			{ systemPrompt: "sys", messages: [{ role: "user", content: "batch" }], tools: [] },
+			{
+				systemPrompt: "sys",
+				messages: [{ role: "user", content: "batch" }],
+				tools: [],
+			},
 			echoExecutor(log),
 		);
 		assert.equal(res.notes.length, 0);
@@ -75,7 +84,11 @@ describe("runWithTools", () => {
 	it("advise call is collected, not executed, and ends the loop", async () => {
 		const { caller, requests } = scriptedCaller(
 			toolUseResult([
-				{ id: "c1", name: "advise", arguments: { note: "unguarded eval in a.ts:9", severity: "blocker" } },
+				{
+					id: "c1",
+					name: "advise",
+					arguments: { note: "unguarded eval in a.ts:9", severity: "blocker" },
+				},
 			]),
 		);
 		const log: string[] = [];
@@ -96,12 +109,22 @@ describe("runWithTools", () => {
 		const { caller, requests } = scriptedCaller(
 			toolUseResult([{ id: "r1", name: "read", arguments: { path: "a.ts" } }]),
 			toolUseResult([{ id: "g1", name: "grep", arguments: { pattern: "eval" } }]),
-			toolUseResult([{ id: "a1", name: "advise", arguments: { note: "found it", severity: "concern" } }]),
+			toolUseResult([
+				{
+					id: "a1",
+					name: "advise",
+					arguments: { note: "found it", severity: "concern" },
+				},
+			]),
 		);
 		const log: string[] = [];
 		const res = await runWithTools(
 			caller,
-			{ systemPrompt: "sys", messages: [{ role: "user", content: "batch" }], tools: [] },
+			{
+				systemPrompt: "sys",
+				messages: [{ role: "user", content: "batch" }],
+				tools: [],
+			},
 			echoExecutor(log),
 		);
 		assert.equal(requests.length, 3);
@@ -123,7 +146,11 @@ describe("runWithTools", () => {
 			toolUseResult([{ id: `x${i}`, name: "read", arguments: { path: "f" } }]),
 		);
 		const { caller, requests } = scriptedCaller(...infinite);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const res = await runWithTools(
+			caller,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			echoExecutor([]),
+		);
 		assert.equal(requests.length, 8);
 		assert.equal(res.endedBy, "roundCap");
 	});
@@ -137,62 +164,68 @@ describe("runWithTools", () => {
 		const executor: ToolExecutor = {
 			execute: () => Promise.resolve({ content: big }),
 		};
-		await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, executor);
-		const tr = requests[1]!.messages.find((m) => m.role === "toolResult") as { content: string };
+		await runWithTools(
+			caller,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			executor,
+		);
+		const tr = requests[1]!.messages.find((m) => m.role === "toolResult") as {
+			content: string;
+		};
 		assert.equal(tr.content.length, TOOL_RESULT_CAP + 1); // cap + ellipsis
 	});
 
 	it("invalid severity coerces to concern; empty note dropped", async () => {
 		const { caller } = scriptedCaller(
 			toolUseResult([
-				{ id: "s1", name: "advise", arguments: { note: "real note", severity: "CRITICAL!!" } },
+				{
+					id: "s1",
+					name: "advise",
+					arguments: { note: "real note", severity: "CRITICAL!!" },
+				},
 			]),
 		);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const res = await runWithTools(
+			caller,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			echoExecutor([]),
+		);
 		assert.equal(res.notes[0]!.severity, "concern");
 
 		const { caller: c2 } = scriptedCaller(
-			toolUseResult([{ id: "s2", name: "advise", arguments: { note: "  ", severity: "nit" } }]),
+			toolUseResult([
+				{ id: "s2", name: "advise", arguments: { note: "  ", severity: "nit" } },
+			]),
 			textResult("fallback"),
 		);
-		const res2 = await runWithTools(c2, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const res2 = await runWithTools(
+			c2,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			echoExecutor([]),
+		);
 		assert.equal(res2.notes.length, 0);
 	});
 
 	it("skipIf is carried through", async () => {
 		const { caller } = scriptedCaller(
 			toolUseResult([
-				{ id: "k1", name: "advise", arguments: { note: "tests failing", severity: "concern", skipIf: "tests failing" } },
+				{
+					id: "k1",
+					name: "advise",
+					arguments: {
+						note: "tests failing",
+						severity: "concern",
+						skipIf: "tests failing",
+					},
+				},
 			]),
 		);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const res = await runWithTools(
+			caller,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			echoExecutor([]),
+		);
 		assert.equal(res.notes[0]!.skipIf, "tests failing");
-	});
-
-	it("clamps note text to MAX_NOTE_CHARS (runtime backstop)", async () => {
-		const long = "x".repeat(MAX_NOTE_CHARS + 200);
-		const { caller } = scriptedCaller(
-			toolUseResult([{ id: "c1", name: "advise", arguments: { note: long, severity: "concern" } }]),
-		);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
-		const note = res.notes[0]!;
-		assert.equal(note.note.length, MAX_NOTE_CHARS);
-		assert.ok(note.note.endsWith("…"), "clamped note ends with an ellipsis so truncation is visible");
-		assert.equal(note.fullNote, long, "untruncated text preserved on fullNote");
-	});
-
-	it("does not set fullNote when the note fits", async () => {
-		const { caller } = scriptedCaller(
-			toolUseResult([{ id: "c1", name: "advise", arguments: { note: "short", severity: "nit" } }]),
-		);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
-		assert.equal(res.notes[0]!.note, "short");
-		assert.equal(res.notes[0]!.fullNote, undefined);
-	});
-
-	it("advise tool schema caps note via maxLength", () => {
-		const props = ADVISE_TOOL_DEF.parameters.properties as { note: { maxLength?: number } };
-		assert.equal(props.note.maxLength, MAX_NOTE_CHARS);
 	});
 
 	it("accumulates usage across rounds", async () => {
@@ -201,7 +234,11 @@ describe("runWithTools", () => {
 		const r2 = textResult("ok");
 		r2.usage = { input: 200, output: 20 };
 		const { caller } = scriptedCaller(r1, r2);
-		const res = await runWithTools(caller, { systemPrompt: "s", messages: [], tools: [] }, echoExecutor([]));
+		const res = await runWithTools(
+			caller,
+			{ systemPrompt: "s", messages: [], tools: [] },
+			echoExecutor([]),
+		);
 		assert.deepEqual(res.usage, { input: 300, output: 30, calls: 2 });
 	});
 });
@@ -209,14 +246,16 @@ describe("runWithTools", () => {
 // ── tools.ts executor ──
 
 describe("createReadonlyToolExecutor", async () => {
-	const { createReadonlyToolExecutor, bashWriteViolation, matchGlob } = await import(
-		"../src/advisor/tools.ts"
-	);
+	const { createReadonlyToolExecutor, bashWriteViolation, matchGlob } =
+		await import("../src/advisor/tools.ts");
 	let dir: string;
 	before(() => {
 		dir = mkdtempSync(join(tmpdir(), "pi-advisor-tools-"));
 		mkdirSync(join(dir, "src"), { recursive: true });
-		writeFileSync(join(dir, "src", "a.ts"), "export const a = 1;\nexport const b = 2;\n");
+		writeFileSync(
+			join(dir, "src", "a.ts"),
+			"export const a = 1;\nexport const b = 2;\n",
+		);
 		writeFileSync(join(dir, "README.md"), "# hello\nsecret marker line\n");
 	});
 	after(() => rmSync(dir, { recursive: true, force: true }));

@@ -12,15 +12,10 @@
 /** Severity of an advisor note, from least to most intrusive. */
 export type Severity = "nit" | "concern" | "blocker";
 
-/** Max length of a note's review text. Enforced by the advise tool schema (maxLength) with a runtime clamp in engine.ts as belt-and-suspenders. */
-export const MAX_NOTE_CHARS = 500;
-
 /** A single review note emitted by an advisor via the `advise` tool. */
 export interface AdvisorNote {
-	/** The review text, ≤ 500 chars (enforced by the advise tool schema). */
+	/** The review text. Brevity is steered by the advise tool's schema description, not enforced. */
 	note: string;
-	/** Untruncated text, present only when `note` was clamped at MAX_NOTE_CHARS. Never routed into LLM context — carried as message details for the renderer. */
-	fullNote?: string;
 	severity: Severity;
 	/** If present, declares this batch not worth surfacing — note dropped. */
 	skipIf?: string;
@@ -212,8 +207,8 @@ export interface CompleteResult {
 
 /** Advice injection channel back into the primary session. */
 export interface Injector {
-	/** Interrupt channel for every severity. `details` is opaque message metadata (never in LLM context) — carries the untruncated note when clamped. */
-	steer(text: string, details?: unknown): void;
+	/** Interrupt channel for every severity. */
+	steer(text: string): void;
 }
 
 /** Read-only tool execution for the advisor tool loop. */

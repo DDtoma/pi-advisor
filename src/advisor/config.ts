@@ -333,7 +333,10 @@ export interface WatchdogConfig {
 
 const VALID_TOOLS = new Set(["read", "grep", "find", "ls", "bash"]);
 const SLUG_RE = /^[a-z0-9-]+$/;
-const MODEL_RE = /^[^/\s]+\/[^/\s:]+(:[^/\s:]+)?$/;
+// Provider is up to the first slash; the model id may itself contain
+// slashes (proxy catalogues like modelnexus use z-ai/glm-5.3-flash) —
+// same split rule as parseModelSpec in src/pi/model-caller.ts.
+const MODEL_RE = /^[^/\s]+\/[^\s]+$/;
 export const PROMPT_BUDGET_CHARS = 5000;
 const DEFAULT_MAX_TOKENS = 80000;
 

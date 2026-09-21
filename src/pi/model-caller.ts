@@ -19,6 +19,7 @@ import type {
 	Model,
 	ThinkingLevel,
 	Tool,
+	ToolCall,
 	Usage,
 } from "@earendil-works/pi-ai";
 import type {
@@ -37,6 +38,7 @@ const THINKING_LEVELS = new Set([
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ]);
 
 export function parseModelSpec(spec: string): {
@@ -143,7 +145,12 @@ function toPiMessage(m: Message, model: Model<Api>): PiMessage {
 						type: "toolCall" as const,
 						id: b.id,
 						name: b.name,
-						arguments: b.arguments,
+						// SAFETY: the pi-free mirror widens ToolCall["arguments"]
+						// (JsonObject) to Record<string, unknown>; values originate
+						// from pi tool calls, so they stay JSON. Indexed access keeps
+						// this compiling against pi-ai versions that type arguments
+						// more loosely.
+						arguments: b.arguments as ToolCall["arguments"],
 					},
 		);
 	return {

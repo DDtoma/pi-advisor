@@ -133,6 +133,13 @@ describe("parseConfig (schema validation)", () => {
 		);
 	});
 
+	it("accepts a model id containing slashes and a thinking suffix", () => {
+		const cfg = parseConfig(
+			'version: "1"\nadvisors:\n  - slug: x\n    model: modelnexus/z-ai/glm-5.3-flash:high\n    prompt: x\n',
+		);
+		assert.equal(cfg.advisors[0]?.model, "modelnexus/z-ai/glm-5.3-flash:high");
+	});
+
 	it("rejects prompt over budget", () => {
 		const big = "x".repeat(PROMPT_BUDGET_CHARS + 1);
 		assert.throws(

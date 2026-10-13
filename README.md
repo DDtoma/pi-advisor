@@ -125,7 +125,7 @@ npm run docs:check  # 文档新鲜度
 | 文档 | 内容 |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | 系统架构:三要素(隔离/链路/缓存)的完整设计 |
-| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 0.84.4) |
+| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 1.2.0) |
 | [docs/design-decisions.md](docs/design-decisions.md) | 全部 ADR,含被否决的替代方案 |
 | [docs/testing.md](docs/testing.md) | 测试策略与 fixture 说明 |
 
@@ -133,6 +133,6 @@ npm run docs:check  # 文档新鲜度
 
 | pi-advisor | 依赖的 pi 版本 | 关键 API |
 |---|---|---|
-| 0.1.x | pi ≥ 0.84.0 | `modelRegistry.complete`, `turn_end`, `sendMessage(deliverAs, triggerTurn)` |
+| 0.1.x | pi ≥ 0.84.0,< 2.0.0 | `modelRegistry.complete`, `turn_end`, `sendMessage(deliverAs, triggerTurn)` |
 
 `session_start` 时做能力检测,缺 API 则降级为 `/advisor status` 报"需要 pi ≥ 0.84",不 crash。

@@ -13,13 +13,13 @@
     "types": ["node"],
     "paths": {
       "@earendil-works/pi-coding-agent": [
-        "/home/llight/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
+        "/home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
       ],
       "@earendil-works/pi-ai": [
-        "/home/llight/.local/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
+        "/home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
       ],
       "@earendil-works/pi-tui": [
-        "/home/llight/.local/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
+        "/home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
       ]
     }
   },

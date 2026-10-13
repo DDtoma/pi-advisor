@@ -1,14 +1,15 @@
-# API 验证清单 —— pi 0.86.1 本机实测
+# API 验证清单 —— pi 1.2.0 本机实测
 
 本文档记录 pi-advisor 依赖的**每一个** pi / pi-ai API,以及它在本机安装中的确切定义位置。写实现时以本文档为准;升级 pi 后逐行重新核对。
 
 验证环境:
 
 ```
-pi 版本:        0.86.1
-安装路径:       /home/llight/.local/lib/node_modules/@earendil-works/pi-coding-agent
+pi 版本:        1.2.0
+安装路径:       /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-coding-agent
 下文缩写:       PI_DIR = 上述路径
-pi-ai 路径:     PI_DIR/node_modules/@earendil-works/pi-ai
+pi-ai 路径:     /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-ai
+pi-tui 路径:    /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-tui
 ```
 
 ---
@@ -17,7 +18,7 @@ pi-ai 路径:     PI_DIR/node_modules/@earendil-works/pi-ai
 
 extension 入口签名:`export default function (pi: ExtensionAPI): void`
 
-### 1.1 事件订阅 `pi.on(event, handler)`(types.d.ts:912 起,ExtensionAPI.on 重载;返回取消订阅函数)
+### 1.1 事件订阅 `pi.on(event, handler)`(types.d.ts:1186 起,ExtensionAPI.on 重载;返回取消订阅函数)
 
 pi-advisor 使用的事件:
 
@@ -30,7 +31,7 @@ pi-advisor 使用的事件:
 
 ### 1.2 ⚠️ 关键约束:handler 会被 pi await
 
-`PI_DIR/dist/core/extensions/runner.js:656`,在 `async emit(...)`(l.650)内部:
+`PI_DIR/dist/core/extensions/runner.js:819`,在 `async emit(...)`(l.813)内部:
 
 ```js
 const handlerResult = await handler(event, ctx);
@@ -48,34 +49,40 @@ pi.on("turn_end", (event, ctx) => {
 
 | 签名 | 位置 | 用途 |
 | --- | --- | --- |
-| `sendMessage<T = unknown>(message: Pick<CustomMessage<T>, "customType"\|"content"\|"display"\|"details">, options?: { triggerTurn?: boolean; deliverAs?: "steer" \| "followUp" \| "nextTurn" }): void` | types.d.ts:977 | advisory 注入(全部 severity:customType `"advisory"` + `deliverAs:"steer"` + `triggerTurn:true`,ADR-013)。`steer` = 打断进行中的工作;`followUp` = 排队等当前工作结束(advisor 不用,实测忙时攒批 ~9 分钟) |
-| `appendEntry<T = unknown>(customType: string, data?: T): void` | types.d.ts:991 | 写 CustomEntry 到 session(不入 LLM 上下文)—— 用于 token 记账、debug 追踪 |
-| `registerCommand(name: string, options: Omit<RegisteredCommand, "name" \| "sourceInfo">): void` | types.d.ts:952 | `/advisor status | next | now | off` |
-| `registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void` | types.d.ts:971 | 让 `customType:"advisory"` 的消息在 TUI 里渲染成带 severity 颜色的卡片 |
-| `registerFlag(name: string, options: ...): void` / `getFlag(name: string): boolean \| string \| undefined` | types.d.ts:959,969 | `--advisor-model` 之类 CLI flag(可选功能) |
-| `exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>` | types.d.ts:999 | 找 `WATCHDOG.yml`、读文件以外的场景(如 git root 探测) |
-| `events: EventBus` | types.d.ts:1089 | runtime 内部事件总线(测试钩子用) |
+| `sendMessage<T = unknown>(message: Pick<CustomMessage<T>, "customType"\|"content"\|"display"\|"details">, options?: { triggerTurn?: boolean; deliverAs?: "steer" \| "followUp" \| "nextTurn" }): void` | types.d.ts:1258 | advisory 注入(全部 severity:customType `"advisory"` + `deliverAs:"steer"` + `triggerTurn:true`,ADR-013)。`steer` = 打断进行中的工作;`followUp` = 排队等当前工作结束(advisor 不用,实测忙时攒批 ~9 分钟) |
+| `appendEntry<T = unknown>(customType: string, data?: T): void` | types.d.ts:1272 | 写 CustomEntry 到 session(不入 LLM 上下文)—— 用于 token 记账、debug 追踪 |
+| `registerCommand(name: string, options: Omit<RegisteredCommand, "name" \| "sourceInfo">): void` | types.d.ts:1231 | `/advisor status | next | now | off` |
+| `registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void` | types.d.ts:1250 | 让 `customType:"advisory"` 的消息在 TUI 里渲染成带 severity 颜色的卡片 |
+| `registerFlag(name: string, options: ...): void` / `getFlag(name: string): boolean \| string \| undefined` | types.d.ts:1238,1248 | `--advisor-model` 之类 CLI flag(可选功能) |
+| `exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>` | types.d.ts:1280 | 找 `WATCHDOG.yml`、读文件以外的场景(如 git root 探测) |
+| `events: EventBus` | types.d.ts:1406 | runtime 内部事件总线(测试钩子用) |
 
 ---
 
 ## 2. 事件 payload 形状
 
-### 2.1 `TurnEndEvent`(types.d.ts:586)
+### 2.1 `TurnEndEvent`(types.d.ts:828)
 
 ```ts
-export interface TurnEndEvent {
+export interface TurnEndEvent extends BoundaryState {
   type: "turn_end";
   turnIndex: number;
   message: AgentMessage;              // 本轮 assistant 消息
   toolResults: ToolResultMessage[];   // 本轮工具结果
+  messageEntryId: string;
+  toolResultEntryIds: string[];
 }
 ```
 
 注意:pi 直接给了本轮的消息。**但 pi-advisor 不依赖它**,而是用 `ctx.sessionManager.getBranch()` 全量 + 自己的游标切片 —— 原因:跨轮上下文折叠、compact 后 reset、以及 advisor 需要看到 user 消息(turn_end 只给 assistant + toolResult)。
 
-### 2.2 `BeforeAgentStartEventResult`(types.d.ts:850)
+### 2.2 `BeforeAgentStartEvent`(types.d.ts:718 起) 与 `BeforeAgentStartEventResult`(l.1125)
 
 ```ts
+export type BeforeAgentStartEvent =
+  | { type: "before_agent_start"; messageType: "user"; prompt: string; images?: ImageContent[]; systemPrompt: string; systemPromptOptions: NormalizedBuildSystemPromptOptions }
+  | { type: "before_agent_start"; messageType: "custom"; message: CustomMessage; systemPrompt: string; systemPromptOptions: NormalizedBuildSystemPromptOptions };
+
 export interface BeforeAgentStartEventResult {
   message?: Pick<CustomMessage, "customType" | "content" | "display" | "details">;
   /** 多个 extension 返回时链式替换 */
@@ -83,20 +90,20 @@ export interface BeforeAgentStartEventResult {
 }
 ```
 
-此消息进入 LLM 上下文(类型是 CustomMessage,带 `customType:"advisory"`),下轮游标切片时按 `customType` 过滤,**防递归闭环**。
+此消息进入 LLM 上下文(类型是 CustomMessage,带 `customType:"advisory"`),下轮游标切片时按 `customType` 过滤,**防递归闭环**。pi-advisor 当前不订阅 `before_agent_start`(ADR-013)。
 
 ---
 
 ## 3. SessionManager(`PI_DIR/dist/core/session-manager.d.ts`)
 
-### 3.1 `ReadonlySessionManager`(session-manager.d.ts:152)—— extension 拿到的类型
+### 3.1 `ReadonlySessionManager`(session-manager.d.ts:178)—— extension 拿到的类型
 
 ```ts
 export type ReadonlySessionManager = Pick<SessionManager,
   "getCwd" | "getSessionDir" | "getSessionId" | "getSessionFile" |
   "getLeafId" | "getLeafEntry" | "getEntry" | "getLabel" |
-  "getBranch" | "buildContextEntries" | "getHeader" | "getEntries" |
-  "getTree" | "getSessionName">;
+  "getBranch" | "buildContextEntries" | "buildSessionProjection" |
+  "getHeader" | "getEntries" | "getTree" | "getSessionName">;
 ```
 
 **类型层面没有任何 append 方法** —— advisor 无法污染主 session,隔离由类型系统保证。
@@ -125,9 +132,9 @@ entry.type === "custom_message" && entry.customType === "advisory"  →  跳过
 
 ---
 
-## 4. ModelRegistry(`PI_DIR/dist/core/model-registry.d.ts:20`)
+## 4. ModelRegistry(`PI_DIR/dist/core/model-registry.d.ts:21`)
 
-`ctx.modelRegistry: ModelRegistry`(types.d.ts:222)。这是暴露给 extension 的**同步 facade**(javadoc: "Synchronous compatibility facade exposed to extensions. Coding-agent internals use ModelRuntime directly.")。
+`ctx.modelRegistry: ModelRegistry`(types.d.ts:225)。这是暴露给 extension 的**同步 facade**(javadoc: "Synchronous compatibility facade exposed to extensions. Coding-agent internals use ModelRuntime directly.")。
 
 ### 4.1 pi-advisor 使用的方法
 
@@ -153,9 +160,9 @@ entry.type === "custom_message" && entry.customType === "advisory"  →  跳过
 
 ---
 
-## 5. pi-ai 类型(`PI_DIR/node_modules/@earendil-works/pi-ai/dist/types.d.ts`)
+## 5. pi-ai 类型(`/home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-ai/dist/types.d.ts`)
 
-### 5.1 `Context`(l.438)—— `complete()` 的入参
+### 5.1 `Context`(l.532)—— `complete()` 的入参
 
 ```ts
 export interface Context {
@@ -165,23 +172,23 @@ export interface Context {
 }
 ```
 
-provider 层的流入参是 `TranscriptContext`(types.d.ts:443 起,system prompt 与工具声明由 transcript 的 system 消息携带,自定义 provider 用 `getCurrentSystemPrompt()` / `getCurrentTools()` 读取);`ModelRegistry.complete` / `Models.stream` 的公开入参仍是上面的 `Context`。
+provider 层的流入参是 `TranscriptContext`(types.d.ts:544 起,system prompt 与工具声明由 transcript 的 system 消息携带,自定义 provider 用 `getCurrentSystemPrompt()` / `getCurrentTools()` 读取);`ModelRegistry.complete` / `Models.stream` 的公开入参仍是上面的 `Context`。
 
 ### 5.2 消息类型
 
 | 类型 | 位置 | 关键字段 |
 | --- | --- | --- |
-| `UserMessage` | l.348 | `{ role: "user", content: string \| (TextContent\|ImageContent)[], timestamp }` |
-| `AssistantMessage` | l.353 | `{ role: "assistant", content: (TextContent \| ThinkingContent \| ToolCall)[], api, stopReason, usage, ... }` |
-| `ToolResultMessage` | l.376 | `{ role: "toolResult", toolCallId, toolName, content, isError, timestamp }`,`details` 限定 JSON 兼容值 |
-| `ToolCall` | l.261 | `{ type: "toolCall", id, name, arguments: JsonObject, thoughtSignature?, namespace? }` |
+| `UserMessage` | l.352 | `{ role: "user", content: string \| (TextContent\|ImageContent)[], timestamp }` |
+| `AssistantMessage` | l.357 | `{ role: "assistant", content: (TextContent \| ThinkingContent \| ToolCall)[], api, stopReason, usage, ... }` |
+| `ToolResultMessage` | l.409 | `{ role: "toolResult", toolCallId, toolName, content, isError, timestamp }`,`details` 限定 JSON 兼容值 |
+| `ToolCall` | l.265 | `{ type: "toolCall", id, name, arguments: JsonObject, thoughtSignature?, namespace? }` |
 
 ### 5.3 思考等级
 
 ```ts
-// types.d.ts:227,SimpleStreamOptions(l.224 起)
+// providers/model-schema.d.ts:79,SimpleStreamOptions(types.d.ts:227 起)
 SimpleStreamOptions.reasoning?: ThinkingLevel;   // "minimal"|"low"|"medium"|"high"|"xhigh"|"max"
-// 注意:ProviderStreamOptions(l.156) = StreamOptions & Record<string, unknown>,不自带 reasoning
+// 注意:ProviderStreamOptions(types.d.ts:152) = StreamOptions & Record<string, unknown>,不自带 reasoning
 
 // 调用:
 ctx.modelRegistry.complete(model, context, { reasoning: "high" });
@@ -189,29 +196,33 @@ ctx.modelRegistry.complete(model, context, { reasoning: "high" });
 
 `WATCHDOG.yml` 的 `model: "provider/model:high"` 冒号后缀 → 解析成 `reasoning` 选项。
 
-`ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms`(models.d.ts:45)—— 完整 options 类型。
+`ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms`(models.d.ts:51)—— 完整 options 类型。
 
 ### 5.4 工具定义格式
 
 `Tool = { name, description, parameters: TSchema, constrainedSampling? }`(typebox;`constrainedSampling` 为可选字段,advisor 不用)。advise 工具:
 
 ```ts
-const ADVISE_TOOL: Tool = {
+const ADVISE_TOOL_DEF = {
   name: "advise",
-  description: "Surface a concise review note...",
-  parameters: Type.Object({
-    note: Type.String({ maxLength: 500 }),
-    severity: Type.Union([Type.Literal("nit"), Type.Literal("concern"), Type.Literal("blocker")]),
-    skipIf: Type.Optional(Type.String({ description: "declare this batch not worth surfacing" })),
-  }),
-};
+  description: "Deliver one terse note to the primary agent...",
+  parameters: {
+    type: "object",
+    properties: {
+      note: { type: "string", description: "Terse, specific, actionable — 1–2 sentences. Cite file:line." },
+      severity: { type: "string", enum: ["nit", "concern", "blocker"] },
+      skipIf: { type: "string", description: "Short marker; if a future note still matches this, it is dropped." },
+    },
+    required: ["note", "severity"],
+  },
+} as const;
 ```
 
 advisor 调用后在 `AssistantMessage.content` 里找 `type === "toolCall" && name === "advise"` 的 block,`arguments` 已解析为对象。
 
 ---
 
-## 6. ExtensionContext(types.d.ts:210–250)
+## 6. ExtensionContext(types.d.ts:213–255)
 
 handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 
@@ -220,7 +231,7 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 | `modelRegistry: ModelRegistry` | §4 |
 | `sessionManager: ReadonlySessionManager` | §3 |
 | `cwd: string` | `WATCHDOG.yml` 查找起点 |
-| `isIdle(): boolean` | drain 前的避让(可选优化);`waitForIdle(): Promise<void>` 在 `ExtensionCommandContext`(types.d.ts:259)上,只有 command handler 能拿到 |
+| `isIdle(): boolean` | drain 前的避让(可选优化);`waitForIdle(): Promise<void>` 在 `ExtensionCommandContext`(types.d.ts:286)上,只有 command handler 能拿到 |
 | `hasPendingMessages(): boolean` | 已有排队 steering 时,advisor 的 nit 往后压 |
 | `getContextUsage(): ContextUsage \| undefined` | `/advisor status` 展示主上下文水位 |
 | `ui.notify(message, type)` | 状态提示 |
@@ -234,10 +245,11 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 
 | 约定 | 出处 |
 | --- | --- |
-| package.json manifest:`{ "pi": { "extensions": ["./extensions"], "skills": [...], "prompts": [...], "themes": [...] } }` | packages.md:120–131,路径相对包根,支持 glob 与 `!` 排除 |
-| 无 manifest 时自动发现 `extensions/`、`skills/`、`prompts/`、`themes/` 约定目录 | 同文档 |
-| 安装:`pi install npm:pkg@ver \| git:... \| /abs/path \| ./rel/path`,写 `~/.pi/agent/settings.json`(`-l` 写项目级) | 同文档 |
-| 免安装试用:`pi -e npm:@foo/bar` 或 `pi -e /path/index.ts` | 同文档 |
+| package.json manifest:`{ "pi": { "extensions": ["./extensions"], "skills": [...], "prompts": [...], "themes": [...] } }` | packages.md:57–71,路径相对包根,支持 glob 与 `!` 排除 |
+| 无 manifest 时自动发现 `extensions/`、`skills/`、`prompts/`、`themes/` 约定目录 | packages.md:45–55 |
+| 安装:`pi install npm:pkg@ver \| git:... \| /abs/path \| ./rel/path`,写 `~/.pi/agent/settings.json`(`-l` 写项目级) | packages.md:7–20 |
+| 免安装试用:`pi -e npm:@foo/bar` 或 `pi -e /path/index.ts` | packages.md:24–28 |
+| 宿主提供的 pi 包在 `peerDependencies` 用 `"*"`,不进 `dependencies` | packages.md:76–90 |
 
 ### 7.1 多文件 extension 已验证可行
 
@@ -252,7 +264,7 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 | `modelRegistry.complete` 存在 | `typeof ctx.modelRegistry.complete === "function"` | 全部 advisor unavailable,`/advisor status` 提示升级 pi |
 | advisor 模型已注册 | `modelRegistry.find(provider, modelId) !== undefined` | 该 advisor unavailable |
 | 模型有 auth | `modelRegistry.hasConfiguredAuth(model)` | 该 advisor unavailable,提示 `/login` |
-| `sendMessage` 支持 `deliverAs` + `triggerTurn` | 签名固定(types.d.ts:977),假定存在;首次调用 try/catch | 降级为 notify-only |
+| `sendMessage` 支持 `deliverAs` + `triggerTurn` | 签名固定(types.d.ts:1258),假定存在;首次调用 try/catch | 降级为 notify-only |
 
 ---
 

@@ -1,15 +1,15 @@
-# API 验证清单 —— pi 1.2.0 本机实测
+# API 验证清单 —— pi 1.4.0 本机实测
 
 本文档记录 pi-advisor 依赖的**每一个** pi / pi-ai API,以及它在本机安装中的确切定义位置。写实现时以本文档为准;升级 pi 后逐行重新核对。
 
 验证环境:
 
 ```
-pi 版本:        1.2.0
-安装路径:       /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-coding-agent
+pi 版本:        1.4.0
+安装路径:       /home/llight/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-coding-agent
 下文缩写:       PI_DIR = 上述路径
-pi-ai 路径:     /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-ai
-pi-tui 路径:    /home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-tui
+pi-ai 路径:     /home/llight/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-ai
+pi-tui 路径:    /home/llight/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-tui
 ```
 
 ---
@@ -28,16 +28,17 @@ pi-advisor 使用的事件:
 | `session_shutdown` | `SessionShutdownEvent` | dispose:清队列、取消在途 drain |
 | `session_compact` | `SessionCompactEvent` | 主 transcript 被压缩 → 全部 advisor 游标 reset + 上下文摘要后重建 |
 | `turn_end` | `TurnEndEvent` | **主触发点**(见 §2.1) |
+| `message_end` | `MessageEndEvent` = `{ message: AgentMessage }`(types.d.ts:848) | 延迟观测:advisory `CustomMessage`(role `"custom"`、customType `"advisory"`)真正进入上下文的时刻;handler 可返回 `{ message }` 替换消息,advisor 不返回 |
 
 ### 1.2 ⚠️ 关键约束:handler 会被 pi await
 
-`PI_DIR/dist/core/extensions/runner.js:819`,在 `async emit(...)`(l.813)内部:
+`turn_end` 走 `async emitBoundary(...)`(`runner.js:759`,await 在 l.774);`session_start`/`session_compact`/`session_shutdown` 走 `async emit(...)`(l.813,await 在 l.819);`message_end` 走 `async emitMessageEnd(...)`(l.864,await 在 l.872)。三条路径都位于 `PI_DIR/dist/core/extensions/runner.js`,都会 await handler。以 `turn_end` 为例:
 
 ```js
 const handlerResult = await handler(event, ctx);
 ```
 
-**结论:`turn_end` handler 必须同步返回**,advisor 的 LLM 调用走 fire-and-forget:
+**结论:`turn_end` 和 `message_end` handler 必须同步返回**,advisor 的 LLM 调用走 fire-and-forget:
 
 ```ts
 pi.on("turn_end", (event, ctx) => {
@@ -76,7 +77,7 @@ export interface TurnEndEvent extends BoundaryState {
 
 注意:pi 直接给了本轮的消息。**但 pi-advisor 不依赖它**,而是用 `ctx.sessionManager.getBranch()` 全量 + 自己的游标切片 —— 原因:跨轮上下文折叠、compact 后 reset、以及 advisor 需要看到 user 消息(turn_end 只给 assistant + toolResult)。
 
-### 2.2 `BeforeAgentStartEvent`(types.d.ts:718 起) 与 `BeforeAgentStartEventResult`(l.1125)
+### 2.2 `BeforeAgentStartEvent`(types.d.ts:720 起,union 在 l.742) 与 `BeforeAgentStartEventResult`(l.1125)
 
 ```ts
 export type BeforeAgentStartEvent =
@@ -91,6 +92,30 @@ export interface BeforeAgentStartEventResult {
 ```
 
 此消息进入 LLM 上下文(类型是 CustomMessage,带 `customType:"advisory"`),下轮游标切片时按 `customType` 过滤,**防递归闭环**。pi-advisor 当前不订阅 `before_agent_start`(ADR-013)。
+
+### 2.3 `MessageEndEvent`(types.d.ts:848)与 `CustomMessage`(PI_DIR/dist/core/messages.d.ts:32)
+
+```ts
+export interface MessageEndEvent {
+  type: "message_end";
+  message: AgentMessage;
+}
+export interface MessageEndEventResult {
+  /** 替换定稿消息，role 必须不变 */
+  message?: AgentMessage;
+}
+
+export interface CustomMessage<T = unknown> {
+  role: "custom";
+  customType: string;
+  content: string | (TextContent | ImageContent)[];
+  display: boolean;
+  details?: T;
+  timestamp: number;
+}
+```
+
+index.ts 的 handler 不返回 `MessageEndEventResult`,只在 `message` 是 `role:"custom"`、`customType:"advisory"` 的 `CustomMessage` 时记一条 debug 日志(投递延迟观测),`content` 的字符串与文本块两种形态都要处理。
 
 ---
 
@@ -160,9 +185,9 @@ entry.type === "custom_message" && entry.customType === "advisory"  →  跳过
 
 ---
 
-## 5. pi-ai 类型(`/home/llight/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-ai/dist/types.d.ts`)
+## 5. pi-ai 类型(`/home/llight/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-ai/dist/types.d.ts`)
 
-### 5.1 `Context`(l.532)—— `complete()` 的入参
+### 5.1 `Context`(l.543)—— `complete()` 的入参
 
 ```ts
 export interface Context {
@@ -172,23 +197,23 @@ export interface Context {
 }
 ```
 
-provider 层的流入参是 `TranscriptContext`(types.d.ts:544 起,system prompt 与工具声明由 transcript 的 system 消息携带,自定义 provider 用 `getCurrentSystemPrompt()` / `getCurrentTools()` 读取);`ModelRegistry.complete` / `Models.stream` 的公开入参仍是上面的 `Context`。
+provider 层的流入参是 `TranscriptContext`(types.d.ts:555 起,system prompt 与工具声明由 transcript 的 system 消息携带,自定义 provider 用 `getCurrentSystemPrompt()` / `getCurrentTools()` 读取);`ModelRegistry.complete` / `Models.stream` 的公开入参仍是上面的 `Context`。
 
 ### 5.2 消息类型
 
 | 类型 | 位置 | 关键字段 |
 | --- | --- | --- |
-| `UserMessage` | l.352 | `{ role: "user", content: string \| (TextContent\|ImageContent)[], timestamp }` |
-| `AssistantMessage` | l.357 | `{ role: "assistant", content: (TextContent \| ThinkingContent \| ToolCall)[], api, stopReason, usage, ... }` |
-| `ToolResultMessage` | l.409 | `{ role: "toolResult", toolCallId, toolName, content, isError, timestamp }`,`details` 限定 JSON 兼容值 |
-| `ToolCall` | l.265 | `{ type: "toolCall", id, name, arguments: JsonObject, thoughtSignature?, namespace? }` |
+| `UserMessage` | l.363 | `{ role: "user", content: string \| (TextContent\|ImageContent)[], timestamp }` |
+| `AssistantMessage` | l.368 | `{ role: "assistant", content: (TextContent \| ThinkingContent \| ToolCall)[], api, stopReason, usage, ... }` |
+| `ToolResultMessage` | l.420 | `{ role: "toolResult", toolCallId, toolName, content, isError, timestamp }`,`details` 限定 JSON 兼容值 |
+| `ToolCall` | l.271 | `{ type: "toolCall", id, name, arguments: JsonObject, thoughtSignature?, namespace?, argumentsError? }`;参数文本不是合法 JSON 对象时 `arguments` 为 `{}`、`argumentsError` 描述问题并附原文 |
 
 ### 5.3 思考等级
 
 ```ts
-// providers/model-schema.d.ts:79,SimpleStreamOptions(types.d.ts:227 起)
+// providers/model-schema.d.ts:79,SimpleStreamOptions(types.d.ts:233 起)
 SimpleStreamOptions.reasoning?: ThinkingLevel;   // "minimal"|"low"|"medium"|"high"|"xhigh"|"max"
-// 注意:ProviderStreamOptions(types.d.ts:152) = StreamOptions & Record<string, unknown>,不自带 reasoning
+// 注意:ProviderStreamOptions(types.d.ts:158) = StreamOptions & Record<string, unknown>,不自带 reasoning
 
 // 调用:
 ctx.modelRegistry.complete(model, context, { reasoning: "high" });
@@ -196,7 +221,7 @@ ctx.modelRegistry.complete(model, context, { reasoning: "high" });
 
 `WATCHDOG.yml` 的 `model: "provider/model:high"` 冒号后缀 → 解析成 `reasoning` 选项。
 
-`ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms`(models.d.ts:51)—— 完整 options 类型。
+`ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms`(models.d.ts:53)—— 完整 options 类型。
 
 ### 5.4 工具定义格式
 
@@ -222,7 +247,7 @@ advisor 调用后在 `AssistantMessage.content` 里找 `type === "toolCall" && n
 
 ---
 
-## 6. ExtensionContext(types.d.ts:213–255)
+## 6. ExtensionContext(types.d.ts:213–253)
 
 handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 
@@ -274,7 +299,9 @@ handler 第二参 `ctx: ExtensionContext` 上 pi-advisor 用到的:
 2. `ReadonlySessionManager` 是否仍是只读 Pick(§3.1)
 3. `ModelRegistry.complete` 签名是否变化(§4.1)
 4. `Context.tools` 的 Tool 格式(§5.1, §5.4)
-5. `runner.js` 是否仍 await handler(§1.2)
+5. `ToolCall.argumentsError` 是否仍是畸形参数的唯一标记(§5.2,`advise` 参数解析依赖 `arguments`)
+6. `runner.js` 是否仍 await handler(§1.2)
+7. `MessageEndEvent.message` 中 `CustomMessage` 仍是 `role:"custom"` + `customType` + `content`(types.d.ts:848,index.ts 的投递观测依赖它)
 
 ---
 

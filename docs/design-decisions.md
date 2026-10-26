@@ -42,7 +42,7 @@
 
 **决策**:所有事件 handler 同步返回,advisor 的 drain 循环用 `void runtime.onTurnEnd(...)` 异步启动。
 
-**理由**:`runner.js:588` 显示 pi 在 `async emit()` 里 `await handler(event, ctx)`。advisor 的一次 drain 包含至少一次 LLM 调用(秒级到分钟级),若被 await,主 agent 的每轮结束都会被 advisor 拖住 —— 直接违反"主 agent 执行节奏不被 advisor 拖住"的总纲第 1 条。
+**理由**:`runner.js:774` 显示 pi 在 `async emitBoundary()` 里 `await handler(event, ctx)`。advisor 的一次 drain 包含至少一次 LLM 调用(秒级到分钟级),若被 await,主 agent 的每轮结束都会被 advisor 拖住 —— 直接违反"主 agent 执行节奏不被 advisor 拖住"的总纲第 1 条。
 
 **推论**:`before_agent_start` 是例外 —— 它必须同步返回注入内容,因此 nit 队列的 `drain()` 操作必须是 O(1) 无 await 的纯内存操作。(已随 ADR-013 废弃:nit 队列已删除,扩展不再订阅 before_agent_start)
 

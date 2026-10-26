@@ -80,7 +80,7 @@ pi-advisor 是一个 **watchdog 系统**:主 agent 每结束一轮,它的工作�
 
 ### 2.2 类型系统强制只读
 
-pi 给 extension 的是 `ReadonlySessionManager`(session-manager.d.ts:140)—— 一个没有任何 append 方法的 `Pick` 类型。`src/pi/session-source.ts` 是唯一触碰它的文件,核心子系统只依赖接口:
+pi 给 extension 的是 `ReadonlySessionManager`(session-manager.d.ts:178)—— 一个没有任何 append 方法的 `Pick` 类型。`src/pi/session-source.ts` 是唯一触碰它的文件,核心子系统只依赖接口:
 
 ```ts
 // src/advisor/types.ts —— 核心对主会话的全部认知
@@ -126,7 +126,7 @@ export class SecretScrubber {
 ```
 主 agent turn 结束
   │
-  ▼ pi 调 handler 并 await(runner.js:588)
+  ▼ pi 调 handler 并 await(runner.js:774)
 turn_end handler { void runtime.onTurnEnd(event, ctx); }   ← 同步返回!
   │
   ▼ (异步世界开始,主 agent 已被放行)
@@ -411,7 +411,7 @@ export interface ToolExecutor {
 | 单次 complete 超时 | 120s(AbortSignal) | engine |
 | 工具循环 | ≤ 8 轮 | engine |
 | drain 单飞 | per-advisor 锁 | runtime |
-| turn_end handler | 0 次 await(立即 fire-and-forget) | code review + runner.js:588 注释引用 |
+| turn_end handler | 0 次 await(立即 fire-and-forget) | code review + runner.js:774 注释引用 |
 
 ## 10. 安全模型
 

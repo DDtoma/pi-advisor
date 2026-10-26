@@ -125,7 +125,7 @@ npm run docs:check  # 文档新鲜度
 | 文档 | 内容 |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | 系统架构:三要素(隔离/链路/缓存)的完整设计 |
-| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 1.2.0) |
+| [docs/api-verification.md](docs/api-verification.md) | 所有依赖的 pi API 签名,附本机验证位置(pi 1.4.0) |
 | [docs/design-decisions.md](docs/design-decisions.md) | 全部 ADR,含被否决的替代方案 |
 | [docs/testing.md](docs/testing.md) | 测试策略与 fixture 说明 |
 
